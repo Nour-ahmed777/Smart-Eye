@@ -340,7 +340,11 @@ class PlaybackPage(QWidget):
         right.setStyleSheet("background: transparent;")
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        rl.setSpacing(SPACE_SM)
+        rl.setSpacing(0)
+
+        right_split = QSplitter(Qt.Orientation.Vertical)
+        right_split.setHandleWidth(SPACE_SM)
+        right_split.setStyleSheet("QSplitter::handle { background: transparent; }")
 
         events_card = QWidget()
         events_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
@@ -376,10 +380,11 @@ class PlaybackPage(QWidget):
         self._events_list.setAlternatingRowColors(True)
         self._events_list.viewport().setAutoFillBackground(False)
         self._events_list.viewport().setStyleSheet("background: transparent;")
+        self._events_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._events_list.itemClicked.connect(self._on_event_clicked)
         ec.addWidget(self._events_list, stretch=1)
 
-        rl.addWidget(events_card, stretch=3)
+        right_split.addWidget(events_card)
 
         clips_card = QWidget()
         clips_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
@@ -407,6 +412,7 @@ class PlaybackPage(QWidget):
         self._clips_list.setAlternatingRowColors(True)
         self._clips_list.viewport().setAutoFillBackground(False)
         self._clips_list.viewport().setStyleSheet("background: transparent;")
+        self._clips_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._clips_list.itemClicked.connect(self._on_clip_item_activated)
         ccv.addWidget(self._clips_list, stretch=1)
 
@@ -417,7 +423,20 @@ class PlaybackPage(QWidget):
         self._clip_status.setWordWrap(True)
         ccv.addWidget(self._clip_status)
 
-        rl.addWidget(clips_card, stretch=2)
+        right_split.addWidget(clips_card)
+
+        _qs = QSettings("SmartEye", "Playback")
+        _rsaved = _qs.value("splitter/right_sizes")
+        if _rsaved and len(_rsaved) == 2:
+            try:
+                right_split.setSizes([int(_rsaved[0]), int(_rsaved[1])])
+            except (ValueError, TypeError):
+                right_split.setSizes([650, 420])
+        else:
+            right_split.setSizes([650, 420])
+        right_split.splitterMoved.connect(lambda _pos, _idx: _qs.setValue("splitter/right_sizes", right_split.sizes()))
+
+        rl.addWidget(right_split)
         splitter.addWidget(right)
 
         splitter.setStretchFactor(0, 3)
