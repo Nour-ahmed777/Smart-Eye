@@ -141,7 +141,7 @@ jobs:
           $appInfo = Get-Content app_info.json | ConvertFrom-Json
           $appName = $appInfo.name
           $appVersion = $appInfo.version
-          $appBuild = $appInfo.build
+          $appBuild = Get-Date -Format "yyyyMMdd"
           $appSlug = ($appName -replace '\s+', '')
 
           $distDir = Get-ChildItem -Path (Join-Path $PWD 'build') -Directory -Filter *.dist -ErrorAction SilentlyContinue | Select-Object -First 1
