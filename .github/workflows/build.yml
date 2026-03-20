@@ -82,7 +82,6 @@ jobs:
             onnxruntime.training
             onnxruntime.tools
             onnx.backend.test
-            insightface.thirdparty
             cv2.samples
             pyqtgraph.tests
             PySide6.QtWebEngine
