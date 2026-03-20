@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from backend.camera.playback_thread import PlaybackThread
+from backend.repository import db
 from frontend.app_theme import page_base_styles, safe_set_point_size
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.widgets.video_widget import VideoWidget
@@ -108,6 +109,8 @@ QListWidget::item {{
 }}
 QListWidget::item:selected {{ background: {_ACCENT_BG_18}; color: {_TEXT_PRI}; }}
 QListWidget::item:hover:!selected {{ background: {_ACCENT_HI_BG_07}; color: {_TEXT_PRI}; }}
+QListWidget#clips_list::item {{ padding: {SPACE_6}px {SPACE_10}px; color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; }}
+QListWidget#clips_list::item:selected {{ color: {_TEXT_PRI}; }}
 QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_6}px; margin: {SPACE_XXS}px 0; }}
     QScrollBar::handle:vertical {{
         background: {_ACCENT_HI_BG_22}; min-height: {SIZE_CONTROL_SM}px; border-radius: {RADIUS_3}px;
@@ -139,7 +142,9 @@ class PlaybackPage(QWidget):
         self._events: list = []
         self._video_fps = 30.0
         self._saved_clips: list[str] = []
+        self._rule_camera_id = -1
         self._build_ui()
+        self._load_rule_cameras()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -228,6 +233,23 @@ class PlaybackPage(QWidget):
         self._record_toggle.setToolTip("Saves a clip to data/clips/ when a rule fires. Requires Detection ON.")
         self._record_toggle.toggled.connect(self._on_record_toggled)
         tl.addWidget(self._record_toggle)
+
+        _sep3 = QWidget()
+        _sep3.setFixedSize(SPACE_XXXS, SPACE_XL)
+        _sep3.setStyleSheet(f"background: {_BORDER_DIM};")
+        tl.addWidget(_sep3)
+
+        rule_lbl = QLabel("Rules")
+        rule_lbl.setStyleSheet(
+            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD}; letter-spacing: 0.{SPACE_XS}px;"
+        )
+        tl.addWidget(rule_lbl)
+        self._rule_combo = QComboBox()
+        self._rule_combo.setFixedHeight(SIZE_SECTION_H)
+        self._rule_combo.setFixedWidth(SIZE_DIALOG_W)
+        self._rule_combo.setStyleSheet(_FORM_COMBO)
+        self._rule_combo.currentIndexChanged.connect(self._on_rule_camera_changed)
+        tl.addWidget(self._rule_combo)
         root.addWidget(toolbar)
 
         content = QWidget()
@@ -318,7 +340,7 @@ class PlaybackPage(QWidget):
         right.setStyleSheet("background: transparent;")
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
-        rl.setSpacing(0)
+        rl.setSpacing(SPACE_SM)
 
         events_card = QWidget()
         events_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
@@ -357,14 +379,45 @@ class PlaybackPage(QWidget):
         self._events_list.itemClicked.connect(self._on_event_clicked)
         ec.addWidget(self._events_list, stretch=1)
 
-        self._clips_label = QLabel("")
-        self._clips_label.setStyleSheet(
-            f"color: {_SUCCESS}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; padding: 0 {SPACE_LG}px;"
-        )
-        self._clips_label.setWordWrap(True)
-        ec.addWidget(self._clips_label)
+        rl.addWidget(events_card, stretch=3)
 
-        rl.addWidget(events_card, stretch=1)
+        clips_card = QWidget()
+        clips_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        ccv = QVBoxLayout(clips_card)
+        ccv.setContentsMargins(0, 0, 0, SPACE_MD)
+        ccv.setSpacing(0)
+
+        clips_hdr_w = QWidget()
+        clips_hdr_w.setFixedHeight(SIZE_CONTROL_LG)
+        clips_hdr_w.setStyleSheet("background: transparent;")
+        clips_hdr_l = QHBoxLayout(clips_hdr_w)
+        clips_hdr_l.setContentsMargins(SPACE_LG, 0, SPACE_MD, 0)
+        clips_hdr_l.setSpacing(SPACE_SM)
+
+        clips_title = QLabel("SAVED CLIPS")
+        clips_title.setStyleSheet(
+            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
+        )
+        clips_hdr_l.addWidget(clips_title)
+        clips_hdr_l.addStretch()
+        ccv.addWidget(clips_hdr_w)
+
+        self._clips_list = QListWidget()
+        self._clips_list.setObjectName("clips_list")
+        self._clips_list.setAlternatingRowColors(True)
+        self._clips_list.viewport().setAutoFillBackground(False)
+        self._clips_list.viewport().setStyleSheet("background: transparent;")
+        self._clips_list.itemClicked.connect(self._on_clip_item_activated)
+        ccv.addWidget(self._clips_list, stretch=1)
+
+        self._clip_status = QLabel("")
+        self._clip_status.setStyleSheet(
+            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; padding: 0 {SPACE_LG}px {SPACE_SM}px {SPACE_LG}px;"
+        )
+        self._clip_status.setWordWrap(True)
+        ccv.addWidget(self._clip_status)
+
+        rl.addWidget(clips_card, stretch=2)
         splitter.addWidget(right)
 
         splitter.setStretchFactor(0, 3)
@@ -383,7 +436,7 @@ class PlaybackPage(QWidget):
         root.addWidget(content, stretch=1)
 
     def on_activated(self) -> None:
-        pass
+        self._refresh_clips_list()
 
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -394,31 +447,7 @@ class PlaybackPage(QWidget):
         )
         if not path:
             return
-        self._stop()
-        self._path_edit.setText(path)
-        self._playback_thread = PlaybackThread(path)
-        self._playback_thread.set_detection_enabled(self._detect_toggle.isChecked())
-        self._playback_thread.set_record_enabled(self._record_toggle.isChecked())
-        self._playback_thread.frame_ready.connect(self._on_frame)
-        self._playback_thread.detection_event.connect(self._on_detection_event)
-        self._playback_thread.playback_finished.connect(self._on_finished)
-        self._playback_thread.clip_saved.connect(self._on_clip_saved)
-        cap = cv2.VideoCapture(path)
-        if cap.isOpened():
-            self._total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30
-            self._video_fps = fps
-            self._fps_label.setText(f"FPS: {fps:.0f}")
-            total_sec = self._total_frames / fps
-            self._time_label.setText(f"00:00:00 / {self._format_time(total_sec)}")
-            self._timeline_slider.setRange(0, self._total_frames)
-            cap.release()
-        self._events_list.clear()
-        self._events = []
-        self._saved_clips = []
-        self._event_badge.setText("0")
-        self._clips_label.setText("")
-        self._playback_thread.start()
+        self._start_playback(path)
 
     def _on_frame(self, camera_id, frame, state) -> None:
         frame_idx = state.get("frame_index", 0)
@@ -441,15 +470,19 @@ class PlaybackPage(QWidget):
 
     def _on_clip_saved(self, path: str) -> None:
         self._saved_clips.append(path)
-        self._clips_label.setText(
-            f"Clip saved: {os.path.basename(path)}" + (f" (+{len(self._saved_clips) - 1} more)" if len(self._saved_clips) > 1 else "")
-        )
+        self._refresh_clips_list()
+        self._clip_status.setText(f"Saved: {os.path.basename(path)}")
+
+    def _on_clip_failed(self, message: str) -> None:
+        self._clip_status.setText(message)
 
     def _on_detection_toggled(self, state: bool) -> None:
         if self._playback_thread:
             self._playback_thread.set_detection_enabled(state)
 
     def _on_record_toggled(self, state: bool) -> None:
+        if state and not self._detect_toggle.isChecked():
+            self._detect_toggle.setChecked(True)
         if self._playback_thread:
             self._playback_thread.set_record_enabled(state)
 
@@ -500,6 +533,88 @@ class PlaybackPage(QWidget):
         path, _ = QFileDialog.getSaveFileName(self, "Save Snapshot", "snapshot.jpg", "JPEG (*.jpg);;PNG (*.png)")
         if path:
             cv2.imwrite(path, self._video_widget._last_frame)
+
+    def _refresh_clips_list(self) -> None:
+        self._clips_list.clear()
+        entries: list[tuple[float, str, str]] = []
+        for folder, tag in (("data/clips_live", "live"), ("data/clips", "playback")):
+            if not os.path.isdir(folder):
+                continue
+            for name in os.listdir(folder):
+                if not name.lower().endswith((".mp4", ".avi", ".mkv", ".mov", ".wmv")):
+                    continue
+                path = os.path.join(folder, name)
+                try:
+                    ts = os.path.getmtime(path)
+                except Exception:
+                    ts = 0.0
+                entries.append((ts, tag, path))
+        entries.sort(key=lambda x: x[0], reverse=True)
+        if not entries:
+            self._clip_status.setText("No clips saved yet")
+            return
+        for _ts, tag, path in entries:
+            name = os.path.basename(path)
+            item = QListWidgetItem(f"[{tag}] {name}")
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            self._clips_list.addItem(item)
+
+    def _on_clip_item_activated(self, item) -> None:
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if path and os.path.exists(path):
+            self._start_playback(path)
+    def _load_rule_cameras(self) -> None:
+        self._rule_combo.clear()
+        self._rule_combo.addItem("Global (no camera)", -1)
+        cams = []
+        try:
+            cams = db.get_cameras(enabled_only=True)
+        except Exception:
+            cams = []
+        for cam in cams:
+            self._rule_combo.addItem(cam.get("name", f"Camera {cam.get('id')}"), int(cam.get("id")))
+        if cams:
+            self._rule_camera_id = int(cams[0].get("id"))
+            self._rule_combo.setCurrentIndex(1)
+        else:
+            self._rule_camera_id = -1
+            self._rule_combo.setCurrentIndex(0)
+
+    def _on_rule_camera_changed(self, idx: int) -> None:
+        if idx < 0:
+            return
+        self._rule_camera_id = int(self._rule_combo.currentData())
+        if self._playback_thread and self._path_edit.text():
+            self._start_playback(self._path_edit.text())
+
+    def _start_playback(self, path: str) -> None:
+        self._stop()
+        self._path_edit.setText(path)
+        self._playback_thread = PlaybackThread(path, virtual_camera_id=self._rule_camera_id)
+        self._playback_thread.set_detection_enabled(self._detect_toggle.isChecked())
+        self._playback_thread.set_record_enabled(self._record_toggle.isChecked())
+        self._playback_thread.frame_ready.connect(self._on_frame)
+        self._playback_thread.detection_event.connect(self._on_detection_event)
+        self._playback_thread.playback_finished.connect(self._on_finished)
+        self._playback_thread.clip_saved.connect(self._on_clip_saved)
+        self._playback_thread.clip_failed.connect(self._on_clip_failed)
+        cap = cv2.VideoCapture(path)
+        if cap.isOpened():
+            self._total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30
+            self._video_fps = fps
+            self._fps_label.setText(f"FPS: {fps:.0f}")
+            total_sec = self._total_frames / fps
+            self._time_label.setText(f"00:00:00 / {self._format_time(total_sec)}")
+            self._timeline_slider.setRange(0, self._total_frames)
+            cap.release()
+        self._events_list.clear()
+        self._events = []
+        self._saved_clips = []
+        self._event_badge.setText("0")
+        self._refresh_clips_list()
+        self._clip_status.setText("")
+        self._playback_thread.start()
 
     @staticmethod
     def _format_time(seconds: float) -> str:

@@ -1,6 +1,7 @@
 import time
 import contextlib
 import logging
+import collections
 from concurrent.futures import Future, ThreadPoolExecutor
 
 import cv2
@@ -39,6 +40,13 @@ class CameraThread(QThread):
         self._recent_inbox_embs: list[tuple[float, np.ndarray]] = []
         self._inbox_enabled = False
         self._suppress_errors = False
+        self._clip_enabled = True
+        self._clip_seconds = 5
+        self._clip_buffer: collections.deque[tuple[float, np.ndarray]] = collections.deque()
+        self._last_clip_ts = 0.0
+        self._clip_recent: dict[tuple[str, tuple[str, ...]], float] = {}
+        self._clip_min_interval = 10.0
+        self._clip_repeat_window = 60.0
 
     @property
     def camera_id(self):
@@ -61,12 +69,20 @@ class CameraThread(QThread):
             configured_backends = db.get_setting("capture_backends", None)
             twitch_enabled = db.get_bool("twitch_enabled", False)
             self._inbox_enabled = db.get_bool("inbox_capture_enabled", False)
+            self._clip_enabled = db.get_bool("live_clip_enabled", True)
+            self._clip_seconds = int(db.get_int("live_clip_seconds", 5) or 5)
+            self._clip_min_interval = float(db.get_float("live_clip_min_interval_sec", 10.0) or 10.0)
+            self._clip_repeat_window = float(db.get_float("live_clip_repeat_window_sec", 60.0) or 60.0)
         except Exception:
             configured_prefixes = None
             http_as_live = False
             configured_backends = None
             twitch_enabled = False
             self._inbox_enabled = False
+            self._clip_enabled = True
+            self._clip_seconds = 5
+            self._clip_min_interval = 10.0
+            self._clip_repeat_window = 60.0
 
         live_prefixes = list(configured_prefixes or ["rtsp"])
         if http_as_live:
@@ -187,6 +203,10 @@ class CameraThread(QThread):
                 inbox_context=self,
             )
             self._last_state = result
+            if triggered and self._clip_enabled and self._clip_buffer:
+                if self._should_save_clip(result):
+                    if self._save_clip_from_buffer():
+                        self._last_clip_ts = time.time()
 
         def _submit_inference(frame, fw, fh):
             _INFER_DIM = 512
@@ -237,6 +257,11 @@ class CameraThread(QThread):
             self._suppress_errors = False
             frame_num += 1
             fh, fw = frame.shape[:2]
+            if self._clip_enabled:
+                now_buf = time.time()
+                self._clip_buffer.append((now_buf, frame.copy()))
+                while self._clip_buffer and (now_buf - self._clip_buffer[0][0] > max(1, self._clip_seconds)):
+                    self._clip_buffer.popleft()
 
             if pending_future is not None and pending_future.done():
                 try:
@@ -274,3 +299,55 @@ class CameraThread(QThread):
 
     def clear_last_state(self):
         self._last_state = {}
+
+    def _save_clip_from_buffer(self) -> bool:
+        try:
+            os.makedirs("data/clips_live", exist_ok=True)
+            frames = list(self._clip_buffer)
+            if not frames:
+                return False
+            ts0, _ = frames[0]
+            ts1, _ = frames[-1]
+            duration = max(0.001, ts1 - ts0)
+            fps = max(1.0, min(60.0, len(frames) / duration))
+            sample = frames[0][1]
+            h, w = sample.shape[:2]
+            fname = os.path.join("data", "clips_live", f"clip_cam{self._camera_id}_{int(time.time())}.mp4")
+            fourcc = cv2.VideoWriter.fourcc(*"mp4v")
+            writer = cv2.VideoWriter(fname, fourcc, fps, (w, h))
+            if not writer.isOpened():
+                raise RuntimeError("VideoWriter failed to open (mp4v)")
+            for _, f in frames:
+                writer.write(f)
+            writer.release()
+            logging.getLogger(__name__).info("Live clip saved: %s", fname)
+            return True
+        except Exception:
+            logging.getLogger(__name__).exception("Live clip save failed for camera %s", self._camera_id)
+            return False
+
+    def _should_save_clip(self, result: dict) -> bool:
+        now_ts = time.time()
+        if now_ts - self._last_clip_ts < max(2.0, self._clip_min_interval):
+            return False
+
+        rules = result.get("triggered_rules") or []
+        rules_key = tuple(sorted([str(r) for r in rules]))
+        identity = result.get("identity") or "unknown"
+        if identity == "unknown":
+            identity_key = f"cam:{self._camera_id}"
+        else:
+            identity_key = f"id:{identity}"
+
+        key = (identity_key, rules_key)
+        last_ts = self._clip_recent.get(key)
+        if last_ts and (now_ts - last_ts < self._clip_repeat_window):
+            return False
+
+
+        if len(self._clip_recent) > 200:
+            cutoff = now_ts - max(self._clip_repeat_window, 120.0)
+            self._clip_recent = {k: v for k, v in self._clip_recent.items() if v >= cutoff}
+
+        self._clip_recent[key] = now_ts
+        return True
