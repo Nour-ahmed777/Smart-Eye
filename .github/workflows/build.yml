@@ -3,8 +3,6 @@ name: Build SmartEye
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -51,8 +49,6 @@ jobs:
           enable-plugins: pyside6
           show-scons: true
           include-package: |
-            # cv2
-            # numpy
             psutil
             PySide6
             shiboken6
@@ -140,7 +136,6 @@ jobs:
           assume-yes-for-downloads: true
 
       - name: Collect release files
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: release_files
         shell: pwsh
         run: |
@@ -169,7 +164,6 @@ jobs:
           "zip_path=$zipPath"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Create or update release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
