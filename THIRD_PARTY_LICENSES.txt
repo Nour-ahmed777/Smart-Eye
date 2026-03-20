@@ -86,6 +86,12 @@ https://github.com/tjguk/wmi
 
 --------------------------------------------------
 
+Streamlink
+License: BSD 2-Clause License
+https://github.com/streamlink/streamlink
+
+--------------------------------------------------
+
 ReportLab
 License: BSD License
 https://www.reportlab.com/

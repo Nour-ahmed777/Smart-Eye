@@ -31,6 +31,8 @@ data/snapshots/*
 data/heatmaps/*
 data/backups/*
 data/face_inbox/*
+data/clips/*
+data/clips_live/*
 
 tests/
 
@@ -46,3 +48,5 @@ data/*.db
 !data/heatmaps/.gitkeep
 !data/backups/.gitkeep
 !data/face_inbox/.gitkeep
+!data/clips/.gitkeep
+!data/clips_live/.gitkeep

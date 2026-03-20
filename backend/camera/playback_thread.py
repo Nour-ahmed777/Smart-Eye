@@ -18,6 +18,7 @@ class PlaybackThread(QThread):
     position_changed = Signal(int, int, int)
     detection_event = Signal(int, int, dict)
     clip_saved = Signal(str)
+    clip_failed = Signal(str)
 
     def __init__(self, video_path, virtual_camera_id=-1, fps_limit=30, parent=None):
         super().__init__(parent)
@@ -44,11 +45,19 @@ class PlaybackThread(QThread):
         self._running = True
         self._cap = cv2.VideoCapture(self._video_path)
         if not self._cap.isOpened():
+            logging.getLogger(__name__).warning("Playback: failed to open video %s", self._video_path)
             self.playback_finished.emit(self._camera_id)
             return
         self._total_frames = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
         video_fps = self._cap.get(cv2.CAP_PROP_FPS) or 30
         self._video_fps_actual = video_fps
+        logging.getLogger(__name__).info(
+            "Playback: start path=%s frames=%s fps=%.2f cam_id=%s",
+            self._video_path,
+            self._total_frames,
+            video_fps,
+            self._camera_id,
+        )
         buf_max = int(video_fps * 5)
         detector = get_manager()
         pipeline = PipelineService(self._camera_id)
@@ -64,6 +73,15 @@ class PlaybackThread(QThread):
 
             def _on_event(trig, state):
                 nonlocal _clip_cooldown
+                logging.getLogger(__name__).info(
+                    "Playback: rule trigger cam_id=%s frame=%s rules=%s record=%s buffer=%s cooldown=%s",
+                    self._camera_id,
+                    frame_idx,
+                    [r.get("name") for r in trig],
+                    self._record_enabled,
+                    len(self._frame_buffer),
+                    _clip_cooldown,
+                )
                 event = {
                     "frame": frame_idx,
                     "rules": [r["name"] for r in trig],
@@ -72,8 +90,8 @@ class PlaybackThread(QThread):
                 self._detection_events.append(event)
                 self.detection_event.emit(self._camera_id, frame_idx, state)
                 if self._record_enabled and self._frame_buffer and _clip_cooldown <= 0:
-                    self._save_clip(video_fps)
-                    _clip_cooldown = int(video_fps * 5)
+                    if self._save_clip(video_fps):
+                        _clip_cooldown = int(video_fps * 5)
 
             primary_state["_triggered"] = triggered
             pipeline.handle_result(
@@ -97,6 +115,7 @@ class PlaybackThread(QThread):
             t_start = time.time()
             ret, frame = self._cap.read()
             if not ret:
+                logging.getLogger(__name__).info("Playback: reached end of video")
                 self.playback_finished.emit(self._camera_id)
                 break
 
@@ -122,8 +141,11 @@ class PlaybackThread(QThread):
             self.frame_ready.emit(self._camera_id, frame, primary_state)
             frame_idx += 1
             elapsed = time.time() - t_start
-            with self._fps_lock:
+            self._fps_lock.lock()
+            try:
                 fps_limit = self._fps_limit
+            finally:
+                self._fps_lock.unlock()
             frame_delay = 1.0 / min(fps_limit, video_fps)
             sleep_time = frame_delay - elapsed
             if sleep_time > 0:
@@ -137,16 +159,24 @@ class PlaybackThread(QThread):
             fname = os.path.join("data", "clips", f"clip_{int(time.time())}.mp4")
             frames = list(self._frame_buffer)
             if not frames:
+                logging.getLogger(__name__).warning("Playback: no buffered frames; skipping clip save")
                 return
             h, w = frames[0].shape[:2]
             fourcc = cv2.VideoWriter.fourcc(*"mp4v")
             writer = cv2.VideoWriter(fname, fourcc, fps, (w, h))
+            if not writer.isOpened():
+                raise RuntimeError("VideoWriter failed to open (mp4v)")
             for f in frames:
                 writer.write(f)
             writer.release()
             self.clip_saved.emit(fname)
-        except Exception:
-            logging.getLogger(__name__).exception("Failed to save clip")
+            logging.getLogger(__name__).info("Playback: clip saved %s", fname)
+            return True
+        except Exception as e:
+            msg = f"Clip save failed: {e}"
+            logging.getLogger(__name__).exception("Playback: failed to save clip")
+            self.clip_failed.emit(msg)
+            return False
 
     def stop(self):
         self._running = False
@@ -170,8 +200,11 @@ class PlaybackThread(QThread):
             self._frame_buffer.clear()
 
     def set_fps_limit(self, fps_limit: int) -> None:
-        with self._fps_lock:
+        self._fps_lock.lock()
+        try:
             self._fps_limit = max(1, int(fps_limit))
+        finally:
+            self._fps_lock.unlock()
 
     @property
     def total_frames(self):

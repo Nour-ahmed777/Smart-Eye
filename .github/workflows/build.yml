@@ -3,8 +3,6 @@ name: Build SmartEye
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -46,13 +44,11 @@ jobs:
           output-dir: build
           output-file: SmartEye
           jobs: "2"
-          lto: "no"
+          lto: "yes"
           windows-console-mode: disable
           enable-plugins: pyside6
           show-scons: true
           include-package: |
-            cv2
-            numpy
             psutil
             PySide6
             shiboken6
@@ -67,6 +63,7 @@ jobs:
             backend
             frontend
             utils
+            streamlink
           include-package-data: |
             reportlab
             pyqtgraph
@@ -139,40 +136,50 @@ jobs:
           assume-yes-for-downloads: true
 
       - name: Collect release files
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: release_files
         shell: pwsh
         run: |
+          $appInfo = Get-Content app_info.json | ConvertFrom-Json
+          $appName = $appInfo.name
+          $appVersion = $appInfo.version
+          $appBuild = $appInfo.build
+          $appSlug = ($appName -replace '\s+', '')
+
           $distDir = Get-ChildItem -Path (Join-Path $PWD 'build') -Directory -Filter *.dist -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $distDir) {
             throw "Expected a *.dist folder under build/, but none was found."
           }
 
-          $zipPath = Join-Path $PWD "build\SmartEye-${{ github.run_number }}-dist.zip"
+          $zipPath = Join-Path $PWD ("build\{0}-{1}.zip" -f $appSlug, $appVersion)
           if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
           Compress-Archive -Path (Join-Path $distDir.FullName '*') -DestinationPath $zipPath
 
           $exe = Get-ChildItem -Path "$PWD\build" -Filter *.exe -File -Recurse | Select-Object -First 1
           if (-not $exe) { throw "No .exe file found under build/." }
 
+          "app_name=$appName"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "app_version=$appVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "app_build=$appBuild"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "exe_path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "zip_path=$zipPath"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Create or update release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          $tag  = "v${{ github.run_number }}"
-          $name = "SmartEye v${{ github.run_number }}"
+          $appName = "${{ steps.release_files.outputs.app_name }}"
+          $appVersion = "${{ steps.release_files.outputs.app_version }}"
+          $appBuild = "${{ steps.release_files.outputs.app_build }}"
+          $tag  = "v$appVersion"
+          $name = "$appName v$appVersion (build $appBuild)"
           $repo = "${{ github.repository }}"
           $exe  = "${{ steps.release_files.outputs.exe_path }}"
           $zip  = "${{ steps.release_files.outputs.zip_path }}"
 
           gh release view $tag --repo $repo *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag $exe $zip --repo $repo --title $name --generate-notes
+            gh release create $tag $zip --repo $repo --title $name --generate-notes
           } else {
-            gh release upload $tag $exe $zip --repo $repo --clobber
+            gh release upload $tag $zip --repo $repo --clobber
           }
