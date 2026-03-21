@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
-
 import cv2
-from PySide6.QtCore import Qt, QSize, QSettings
+from PySide6.QtCore import Qt, QSize, QSettings, QTimer, QEvent
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -31,6 +30,7 @@ from frontend.styles._colors import (
     _ACCENT,
     _ACCENT_BG_18,
     _ACCENT_BG_22,
+    _ACCENT_BG_12,
     _ACCENT_HI,
     _ACCENT_HI_BG_07,
     _ACCENT_HI_BG_22,
@@ -44,6 +44,7 @@ from frontend.styles._colors import (
     _BORDER_DIM,
     _DANGER,
     _SUCCESS,
+    _SUCCESS_BG_14,
     _TEXT_MUTED,
     _TEXT_PRI,
     _TEXT_SEC,
@@ -51,6 +52,7 @@ from frontend.styles._colors import (
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
 from frontend.styles._btn_styles import _PRIMARY_BTN, _ICON_BTN, _ICON_BTN_DANGER
 from frontend.styles.page_styles import header_bar_style, toolbar_style
+from frontend.pages.playback._widgets import ClipRowWidget
 from frontend.ui_tokens import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_HEADING,
@@ -73,6 +75,7 @@ from frontend.ui_tokens import (
     SIZE_HEADER_H,
     SIZE_ICON_10,
     SIZE_PILL_H,
+    SIZE_ROW_XL,
     SIZE_SECTION_H,
     SIZE_TOOLBAR_H,
     SPACE_10,
@@ -99,8 +102,19 @@ QSlider::groove:horizontal {{
     height: {SPACE_XS}px; background: {_BG_OVERLAY}; border-radius: {RADIUS_XS}px;
 }}
 QSlider::handle:horizontal {{
-    background: {_ACCENT_HI}; border: {SPACE_XXS}px solid {_ACCENT};
-    width: {SPACE_14}px; height: {SPACE_14}px; margin: -{SPACE_5}px 0; border-radius: {RADIUS_MD}px;
+    background: {_ACCENT_HI};
+    width: {SPACE_14}px; height: {SPACE_14}px;
+    margin: -{SPACE_5}px 0;
+    border: none;
+    border-radius: 999px;
+}}
+QSlider#timeline_slider::handle:horizontal {{
+    background: {_ACCENT_HI};
+    width: {SPACE_14}px; height: {SPACE_14}px;
+    margin: -{SPACE_5}px 0;
+    border: none;
+    border-radius: 999px;
+    image: none;
 }}
 QSlider::sub-page:horizontal {{ background: {_ACCENT}; border-radius: {RADIUS_XS}px; }}
 QListWidget {{ background: transparent; border: none; outline: none; }}
@@ -109,8 +123,18 @@ QListWidget::item {{
 }}
 QListWidget::item:selected {{ background: {_ACCENT_BG_18}; color: {_TEXT_PRI}; }}
 QListWidget::item:hover:!selected {{ background: {_ACCENT_HI_BG_07}; color: {_TEXT_PRI}; }}
-QListWidget#clips_list::item {{ padding: {SPACE_6}px {SPACE_10}px; color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; }}
+QListWidget#clips_list {{ background: {_BG_BASE}; }}
+QListWidget#clips_list::item {{ padding: 0; color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; }}
 QListWidget#clips_list::item:selected {{ color: {_TEXT_PRI}; }}
+QListWidget#clips_list {{ padding-bottom: {SPACE_SM}px; }}
+QPushButton#clip_delete {{
+    background: transparent;
+    border: none;
+    padding: 0;
+}}
+QPushButton#clip_delete:hover {{
+    background: transparent;
+}}
 QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_6}px; margin: {SPACE_XXS}px 0; }}
     QScrollBar::handle:vertical {{
         background: {_ACCENT_HI_BG_22}; min-height: {SIZE_CONTROL_SM}px; border-radius: {RADIUS_3}px;
@@ -132,6 +156,13 @@ def _icon_btn(icon_path: str, size: int = 36, danger: bool = False) -> QPushButt
     return btn
 
 
+def _set_list_active(list_widget: QListWidget, item: QListWidgetItem, activate_cb) -> None:
+    if list_widget and item:
+        list_widget.setCurrentItem(item)
+    if activate_cb:
+        activate_cb(item)
+
+
 class PlaybackPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -145,6 +176,12 @@ class PlaybackPage(QWidget):
         self._rule_camera_id = -1
         self._user_seeking = False
         self._seek_was_playing = False
+        self._seek_pending: int | None = None
+        self._seek_timer = QTimer(self)
+        self._seek_timer.setInterval(40)
+        self._seek_timer.setSingleShot(True)
+        self._seek_timer.timeout.connect(self._flush_seek)
+        self._clip_cards: list[tuple[QListWidgetItem, ClipRowWidget]] = []
         self._build_ui()
         self._load_rule_cameras()
 
@@ -282,8 +319,27 @@ class PlaybackPage(QWidget):
         cc.setSpacing(SPACE_10)
 
         self._timeline_slider = QSlider(Qt.Orientation.Horizontal)
+        self._timeline_slider.setObjectName("timeline_slider")
         self._timeline_slider.setRange(0, 100)
         self._timeline_slider.setValue(0)
+        self._timeline_slider.setStyleSheet(
+            f"""
+QSlider::groove:horizontal {{
+    height: {SPACE_XS}px; background: {_BG_OVERLAY}; border-radius: {RADIUS_XS}px;
+}}
+QSlider::sub-page:horizontal {{
+    background: {_ACCENT}; border-radius: {RADIUS_XS}px;
+}}
+QSlider::handle:horizontal {{
+    background: {_ACCENT_HI};
+    width: {SPACE_14}px; height: {SPACE_14}px;
+    margin: -{SPACE_5}px 0;
+    border: none;
+    border-radius: {SPACE_14 // 2}px;
+    image: none;
+}}
+"""
+        )
         self._timeline_slider.sliderPressed.connect(self._on_seek_pressed)
         self._timeline_slider.sliderMoved.connect(self._on_seek_moved)
         self._timeline_slider.sliderReleased.connect(self._on_seek)
@@ -412,7 +468,12 @@ class PlaybackPage(QWidget):
         self._clips_list.viewport().setAutoFillBackground(False)
         self._clips_list.viewport().setStyleSheet("background: transparent;")
         self._clips_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._clips_list.setSpacing(SPACE_XXS)
+        self._clips_list.setUniformItemSizes(True)
+        self._clips_list.setViewportMargins(0, 0, 0, SPACE_SM)
         self._clips_list.itemClicked.connect(self._on_clip_item_activated)
+        self._clips_list.currentItemChanged.connect(self._sync_clip_card_selection)
+        self._clips_list.viewport().installEventFilter(self)
         ccv.addWidget(self._clips_list, stretch=1)
 
         self._clip_status = QLabel("")
@@ -466,6 +527,13 @@ class PlaybackPage(QWidget):
         if not path:
             return
         self._start_playback(path)
+
+    def eventFilter(self, obj, event):
+        if obj is self._clips_list.viewport() and event.type() == QEvent.Type.MouseButtonPress:
+            if self._clips_list.itemAt(event.pos()) is None:
+                self._clips_list.clearSelection()
+                self._sync_clip_card_selection(None, None)
+        return super().eventFilter(obj, event)
 
     def _on_frame(self, camera_id, frame, state) -> None:
         frame_idx = state.get("frame_index", 0)
@@ -553,6 +621,9 @@ class PlaybackPage(QWidget):
             cur_sec = value / self._video_fps
             total_sec = self._total_frames / self._video_fps
             self._time_label.setText(f"{self._format_time(cur_sec)} / {self._format_time(total_sec)}")
+        self._seek_pending = value
+        if not self._seek_timer.isActive():
+            self._seek_timer.start()
 
     def _on_seek(self) -> None:
         if self._playback_thread:
@@ -562,11 +633,23 @@ class PlaybackPage(QWidget):
                 self._sync_play_button(paused=False)
         self._user_seeking = False
         self._seek_was_playing = False
+        self._seek_pending = None
+
+    def _flush_seek(self) -> None:
+        if self._seek_pending is None:
+            return
+        if self._playback_thread:
+            self._playback_thread.seek(self._seek_pending)
 
     def _change_speed(self, idx: int) -> None:
+        self._apply_speed()
+
+    def _apply_speed(self) -> None:
         speeds = [0.25, 0.5, 1.0, 2.0, 4.0]
+        idx = self._speed_combo.currentIndex()
         if self._playback_thread and idx < len(speeds):
-            self._playback_thread.set_fps_limit(int(30 * speeds[idx]))
+            base_fps = self._video_fps or 30.0
+            self._playback_thread.set_fps_limit(max(0.25, base_fps * speeds[idx]))
 
     def _save_snapshot(self) -> None:
         if not hasattr(self._video_widget, "_last_frame") or self._video_widget._last_frame is None:
@@ -576,7 +659,12 @@ class PlaybackPage(QWidget):
             cv2.imwrite(path, self._video_widget._last_frame)
 
     def _refresh_clips_list(self) -> None:
+        selected_path = None
+        cur = self._clips_list.currentItem()
+        if cur:
+            selected_path = cur.data(Qt.ItemDataRole.UserRole)
         self._clips_list.clear()
+        self._clip_cards.clear()
         entries: list[tuple[float, str, str]] = []
         for folder, tag in (("data/clips_live", "live"), ("data/clips", "playback")):
             if not os.path.isdir(folder):
@@ -594,31 +682,32 @@ class PlaybackPage(QWidget):
         if not entries:
             self._clip_status.setText("No clips saved yet")
             return
+        selected_item = None
         for _ts, tag, path in entries:
-            name = os.path.basename(path)
+            name = os.path.splitext(os.path.basename(path))[0]
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, path)
-            item.setSizeHint(QSize(0, SIZE_SECTION_H))
-            row = QWidget()
-            row.setStyleSheet("background: transparent;")
-            rl = QHBoxLayout(row)
-            rl.setContentsMargins(SPACE_SM, 0, SPACE_SM, 0)
-            rl.setSpacing(SPACE_SM)
-            del_btn = _icon_btn("frontend/assets/icons/x.png", SIZE_CONTROL_SM, danger=True)
-            del_btn.setToolTip("Delete clip")
-            del_btn.clicked.connect(lambda _=False, p=path: self._delete_clip(p))
-            rl.addWidget(del_btn)
-            lbl = QLabel(f"[{tag}] {name}")
-            lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px;")
-            lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            rl.addWidget(lbl, stretch=1)
+            item.setSizeHint(QSize(0, SIZE_ROW_XL))
+            row = ClipRowWidget(name, tag, _ts, path)
+            row.clicked.connect(lambda _=False, lw=self._clips_list, it=item: _set_list_active(lw, it, self._on_clip_item_activated))
+            row.set_delete_callback(lambda p=path: self._delete_clip(p))
             self._clips_list.addItem(item)
             self._clips_list.setItemWidget(item, row)
+            self._clip_cards.append((item, row))
+            if selected_path and path == selected_path:
+                selected_item = item
+        if selected_item:
+            self._clips_list.setCurrentItem(selected_item)
+        self._sync_clip_card_selection(self._clips_list.currentItem(), None)
 
     def _on_clip_item_activated(self, item) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)
         if path and os.path.exists(path):
             self._start_playback(path)
+
+    def _sync_clip_card_selection(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        for it, card in self._clip_cards:
+            card.set_active(it is current)
 
     def _delete_clip(self, path: str) -> None:
         try:
@@ -671,7 +760,7 @@ class PlaybackPage(QWidget):
             self._fps_label.setText(f"FPS: {fps:.0f}")
             total_sec = self._total_frames / fps
             self._time_label.setText(f"00:00:00 / {self._format_time(total_sec)}")
-            self._timeline_slider.setRange(0, self._total_frames)
+            self._timeline_slider.setRange(0, max(0, self._total_frames - 1))
             cap.release()
         self._events_list.clear()
         self._events = []
@@ -681,6 +770,7 @@ class PlaybackPage(QWidget):
         self._clip_status.setText("")
         self._playback_thread.start()
         self._sync_play_button(paused=False)
+        self._apply_speed()
 
     def _sync_play_button(self, paused: bool) -> None:
         icon_path = "frontend/assets/icons/play.png" if paused else "frontend/assets/icons/pause.png"

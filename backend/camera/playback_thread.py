@@ -149,7 +149,7 @@ class PlaybackThread(QThread):
                 fps_limit = self._fps_limit
             finally:
                 self._fps_lock.unlock()
-            frame_delay = 1.0 / min(fps_limit, video_fps)
+            frame_delay = 1.0 / max(0.25, fps_limit)
             sleep_time = frame_delay - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
@@ -202,10 +202,10 @@ class PlaybackThread(QThread):
         if not enabled:
             self._frame_buffer.clear()
 
-    def set_fps_limit(self, fps_limit: int) -> None:
+    def set_fps_limit(self, fps_limit: float) -> None:
         self._fps_lock.lock()
         try:
-            self._fps_limit = max(1, int(fps_limit))
+            self._fps_limit = max(0.25, float(fps_limit))
         finally:
             self._fps_lock.unlock()
 
