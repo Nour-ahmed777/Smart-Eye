@@ -69,6 +69,7 @@ jobs:
             pyqtgraph
             insightface
             onnxruntime
+            streamlink
           include-data-dir: |
             frontend/assets=frontend/assets
             ${{ steps.check_models.outputs.has_models == 'true' && 'data/models=data/models' || '' }}
@@ -84,6 +85,8 @@ jobs:
             onnx.backend.test
             cv2.samples
             pyqtgraph.tests
+            pyqtgraph.opengl
+            pyqtgraph.exporters
             PySide6.QtWebEngine
             PySide6.QtWebEngineWidgets
             PySide6.QtWebEngineCore
@@ -134,7 +137,98 @@ jobs:
             pyqtgraph/examples/*
           assume-yes-for-downloads: true
 
+      - name: Compress executable with UPX
+        shell: pwsh
+        run: |
+          choco install upx -y
+          $exe = Get-ChildItem -Path "$PWD\build" -Filter *.exe -File -Recurse | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Compressing $($exe.FullName) with UPX..."
+            upx -9 $exe.FullName
+            Write-Host "Compression complete!"
+          } else {
+            Write-Host "Warning: No .exe file found to compress"
+          }
+
+      - name: Create NSIS Installer
+        shell: pwsh
+        run: |
+          # Install NSIS
+          choco install nsis -y
+          
+          # Get app info
+          $appInfo = Get-Content app_info.json | ConvertFrom-Json
+          $appVersion = $appInfo.version
+          
+          # Find the .dist folder
+          $distDir = Get-ChildItem -Path (Join-Path $PWD 'build') -Directory -Filter *.dist | Select-Object -First 1
+          if (-not $distDir) {
+            throw "No .dist folder found"
+          }
+          
+          # Create dynamic NSIS script
+          $nsiContent = @"
+          !define APPNAME "SmartEye"
+          !define VERSION "$appVersion"
+          !define EXEFILE "SmartEye.exe"
+          
+          Name "`${APPNAME} Setup"
+          
+          !define MUI_ICON "frontend\assets\icon.ico"
+          !define MUI_UNICON "frontend\assets\icon.ico"
+          
+          !include "MUI2.nsh"
+          
+          OutFile "build\SmartEyeInstaller.exe"
+          InstallDir "`$PROGRAMFILES\`${APPNAME}"
+          Caption "`${APPNAME} Installer"
+          BrandingText "`${APPNAME}"
+          
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+          
+          !insertmacro MUI_UNPAGE_CONFIRM
+          !insertmacro MUI_UNPAGE_INSTFILES
+          
+          !insertmacro MUI_LANGUAGE "English"
+          
+          Section "Install"
+              SetOutPath "`$INSTDIR"
+              File /r "$($distDir.FullName)\*"
+              
+              CreateDirectory "`$SMPROGRAMS\`${APPNAME}"
+              CreateShortcut "`$SMPROGRAMS\`${APPNAME}\`${APPNAME}.lnk" "`$INSTDIR\`${EXEFILE}"
+              CreateShortcut "`$DESKTOP\`${APPNAME}.lnk" "`$INSTDIR\`${EXEFILE}"
+              
+              WriteUninstaller "`$INSTDIR\Uninstall.exe"
+              CreateShortcut "`$SMPROGRAMS\`${APPNAME}\Uninstall.lnk" "`$INSTDIR\Uninstall.exe"
+              
+              WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "DisplayName" "`${APPNAME}"
+              WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "UninstallString" "`$INSTDIR\Uninstall.exe"
+              WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "DisplayIcon" "`$INSTDIR\`${EXEFILE}"
+              WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}" "DisplayVersion" "`${VERSION}"
+          SectionEnd
+          
+          Section "Uninstall"
+              RMDir /r "`$INSTDIR"
+              Delete "`$DESKTOP\`${APPNAME}.lnk"
+              Delete "`$SMPROGRAMS\`${APPNAME}\`${APPNAME}.lnk"
+              Delete "`$SMPROGRAMS\`${APPNAME}\Uninstall.lnk"
+              RMDir "`$SMPROGRAMS\`${APPNAME}"
+              DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\`${APPNAME}"
+          SectionEnd
+          "@
+          
+          $nsiContent | Out-File -FilePath "SmartEye.nsi" -Encoding UTF8
+          
+          & "C:\Program Files (x86)\NSIS\makensis.exe" SmartEye.nsi
+          
+          Write-Host "Installer created successfully!"
+
       - name: Collect release files
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: release_files
         shell: pwsh
         run: |
@@ -144,25 +238,18 @@ jobs:
           $appBuild = Get-Date -Format "yyyyMMdd"
           $appSlug = ($appName -replace '\s+', '')
 
-          $distDir = Get-ChildItem -Path (Join-Path $PWD 'build') -Directory -Filter *.dist -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $distDir) {
-            throw "Expected a *.dist folder under build/, but none was found."
+          $installerPath = Join-Path $PWD "build\SmartEyeInstaller.exe"
+          if (-not (Test-Path $installerPath)) {
+            throw "Installer not found at $installerPath"
           }
 
-          $zipPath = Join-Path $PWD ("build\{0}-{1}.zip" -f $appSlug, $appVersion)
-          if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-          Compress-Archive -Path (Join-Path $distDir.FullName '*') -DestinationPath $zipPath
-
-          $exe = Get-ChildItem -Path "$PWD\build" -Filter *.exe -File -Recurse | Select-Object -First 1
-          if (-not $exe) { throw "No .exe file found under build/." }
-
-          "app_name=$appName"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "app_version=$appVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "app_build=$appBuild"  | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "exe_path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          "zip_path=$zipPath"         | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "app_name=$appName"          | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "app_version=$appVersion"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "app_build=$appBuild"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "installer_path=$installerPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Create or update release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
@@ -173,12 +260,11 @@ jobs:
           $tag  = "v$appVersion"
           $name = "$appName v$appVersion (build $appBuild)"
           $repo = "${{ github.repository }}"
-          $exe  = "${{ steps.release_files.outputs.exe_path }}"
-          $zip  = "${{ steps.release_files.outputs.zip_path }}"
+          $installer = "${{ steps.release_files.outputs.installer_path }}"
 
           gh release view $tag --repo $repo *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag $zip --repo $repo --title $name --generate-notes
+            gh release create $tag $installer --repo $repo --title $name --generate-notes
           } else {
-            gh release upload $tag $zip --repo $repo --clobber
+            gh release upload $tag $installer --repo $repo --clobber
           }
