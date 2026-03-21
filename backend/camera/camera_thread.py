@@ -205,7 +205,26 @@ class CameraThread(QThread):
             self._last_state = result
             if triggered and self._clip_enabled and self._clip_buffer:
                 if self._should_save_clip(result):
-                    if self._save_clip_from_buffer():
+                    clip_path = self._save_clip_from_buffer()
+                    if clip_path:
+                        try:
+                            det = result.get("detections", {}) or {}
+                            obj_types = [
+                                k
+                                for k, v in det.items()
+                                if k != "identity" and v not in (False, 0, "unknown", None, "none")
+                            ]
+                            db.add_clip(
+                                clip_path,
+                                "live",
+                                self._camera_id,
+                                int(time.time()),
+                                result.get("identity"),
+                                result.get("triggered_rules") or [],
+                                obj_types,
+                            )
+                        except Exception:
+                            logging.getLogger(__name__).exception("Failed to record clip metadata for %s", clip_path)
                         self._last_clip_ts = time.time()
 
         def _submit_inference(frame, fw, fh):
@@ -300,12 +319,12 @@ class CameraThread(QThread):
     def clear_last_state(self):
         self._last_state = {}
 
-    def _save_clip_from_buffer(self) -> bool:
+    def _save_clip_from_buffer(self) -> str | None:
         try:
             os.makedirs("data/clips_live", exist_ok=True)
             frames = list(self._clip_buffer)
             if not frames:
-                return False
+                return None
             ts0, _ = frames[0]
             ts1, _ = frames[-1]
             duration = max(0.001, ts1 - ts0)
@@ -321,10 +340,10 @@ class CameraThread(QThread):
                 writer.write(f)
             writer.release()
             logging.getLogger(__name__).info("Live clip saved: %s", fname)
-            return True
+            return fname
         except Exception:
             logging.getLogger(__name__).exception("Live clip save failed for camera %s", self._camera_id)
-            return False
+            return None
 
     def _should_save_clip(self, result: dict) -> bool:
         now_ts = time.time()

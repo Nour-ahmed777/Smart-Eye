@@ -162,6 +162,18 @@ CREATE TABLE IF NOT EXISTS app_settings (
     section TEXT
 );
 
+CREATE TABLE IF NOT EXISTS clips (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    path            TEXT NOT NULL UNIQUE,
+    source          TEXT DEFAULT 'live',
+    camera_id       INTEGER REFERENCES cameras(id),
+    ts              INTEGER,
+    face_label      TEXT,
+    rules_triggered TEXT,
+    object_types    TEXT,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS accounts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     email         TEXT NOT NULL UNIQUE,
@@ -208,3 +220,5 @@ CREATE INDEX IF NOT EXISTS idx_detection_logs_camera_id ON detection_logs (camer
 CREATE INDEX IF NOT EXISTS idx_known_faces_name ON known_faces (name);
 CREATE INDEX IF NOT EXISTS idx_rule_conditions_rule_id ON rule_conditions (rule_id);
 CREATE INDEX IF NOT EXISTS idx_alarm_actions_rule_id ON alarm_actions (rule_id);
+CREATE INDEX IF NOT EXISTS idx_clips_ts ON clips (ts);
+CREATE INDEX IF NOT EXISTS idx_clips_camera_id ON clips (camera_id);

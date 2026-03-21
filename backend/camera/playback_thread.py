@@ -10,6 +10,7 @@ from PySide6.QtCore import QMutex, QThread, Signal
 from backend.pipeline.detector_manager import get_manager
 from backend.pipeline.inference_utils import build_state
 from backend.services.pipeline_service import PipelineService
+from backend.repository import db
 
 
 class PlaybackThread(QThread):
@@ -90,7 +91,7 @@ class PlaybackThread(QThread):
                 self._detection_events.append(event)
                 self.detection_event.emit(self._camera_id, frame_idx, state)
                 if self._record_enabled and self._frame_buffer and _clip_cooldown <= 0:
-                    if self._save_clip(video_fps):
+                    if self._save_clip(video_fps, state, [r.get("name") for r in trig]):
                         _clip_cooldown = int(video_fps * 5)
 
             primary_state["_triggered"] = triggered
@@ -156,14 +157,14 @@ class PlaybackThread(QThread):
         if self._cap:
             self._cap.release()
 
-    def _save_clip(self, fps: float) -> None:
+    def _save_clip(self, fps: float, state: dict | None = None, rules: list[str] | None = None) -> str | None:
         try:
             os.makedirs("data/clips", exist_ok=True)
             fname = os.path.join("data", "clips", f"clip_{int(time.time())}.mp4")
             frames = list(self._frame_buffer)
             if not frames:
                 logging.getLogger(__name__).warning("Playback: no buffered frames; skipping clip save")
-                return
+                return None
             h, w = frames[0].shape[:2]
             fourcc = cv2.VideoWriter.fourcc(*"mp4v")
             writer = cv2.VideoWriter(fname, fourcc, fps, (w, h))
@@ -174,12 +175,30 @@ class PlaybackThread(QThread):
             writer.release()
             self.clip_saved.emit(fname)
             logging.getLogger(__name__).info("Playback: clip saved %s", fname)
-            return True
+            try:
+                det = (state or {}).get("detections", {}) or {}
+                obj_types = [
+                    k
+                    for k, v in det.items()
+                    if k != "identity" and v not in (False, 0, "unknown", None, "none")
+                ]
+                db.add_clip(
+                    fname,
+                    "playback",
+                    self._camera_id,
+                    int(time.time()),
+                    (state or {}).get("identity"),
+                    rules or [],
+                    obj_types,
+                )
+            except Exception:
+                logging.getLogger(__name__).exception("Playback: failed to record clip metadata")
+            return fname
         except Exception as e:
             msg = f"Clip save failed: {e}"
             logging.getLogger(__name__).exception("Playback: failed to save clip")
             self.clip_failed.emit(msg)
-            return False
+            return None
 
     def stop(self):
         self._running = False

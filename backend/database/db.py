@@ -1191,6 +1191,64 @@ def get_all_settings(section=None):
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
+def add_clip(path: str, source: str, camera_id: int | None, ts: int | None, face_label: str | None, rules, object_types):
+    try:
+        rules_json = json.dumps(rules or [])
+        obj_json = json.dumps(object_types or [])
+    except Exception:
+        rules_json = "[]"
+        obj_json = "[]"
+
+    def _op(conn):
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO clips (path, source, camera_id, ts, face_label, rules_triggered, object_types)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (path, source, camera_id, ts, face_label, rules_json, obj_json),
+        )
+        conn.commit()
+
+    _write_call(_op)
+
+
+def delete_clip(path: str):
+    _write_execute("DELETE FROM clips WHERE path=?", (path,))
+
+
+def get_clips(
+    camera_id: int | None = None,
+    ts_from: int | None = None,
+    ts_to: int | None = None,
+    face_label: str | None = None,
+    object_type: str | None = None,
+    rule_triggered: str | None = None,
+):
+    q = "SELECT * FROM clips WHERE 1=1"
+    params = []
+    if camera_id is not None and camera_id != -1:
+        q += " AND camera_id=?"
+        params.append(camera_id)
+    if ts_from is not None:
+        q += " AND ts>=?"
+        params.append(int(ts_from))
+    if ts_to is not None:
+        q += " AND ts<=?"
+        params.append(int(ts_to))
+    if face_label:
+        q += " AND face_label LIKE ?"
+        params.append(f"%{face_label}%")
+    if rule_triggered:
+        q += " AND rules_triggered LIKE ?"
+        params.append(f"%{rule_triggered}%")
+    if object_type:
+        q += " AND object_types LIKE ?"
+        params.append(f"%{object_type}%")
+    q += " ORDER BY ts DESC"
+    rows = _conn.execute(q, params).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_settings_sections():
     rows = _conn.execute("SELECT DISTINCT section FROM app_settings WHERE section IS NOT NULL ORDER BY section").fetchall()
     return [r["section"] for r in rows]
