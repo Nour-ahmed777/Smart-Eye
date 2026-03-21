@@ -8,7 +8,7 @@ ENTRY="$ROOT/main.py"
 OUT_DIR="$ROOT/build"
 
 JOBS="${SMARTEYE_JOBS:-2}"
-LTO="${SMARTEYE_LTO:-no}"
+LTO="${SMARTEYE_LTO:-yes}"
 
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; BLD='\033[1m'; RST='\033[0m'
 info()  { echo -e "${GRN}[INFO]${RST}  $*"; }
@@ -84,8 +84,6 @@ NUITKA_ARGS=(
     
     --enable-plugin=pyside6
     
-    --include-package=cv2
-    --include-package=numpy
     --include-package=psutil
     --include-package=PySide6
     --include-package=shiboken6
@@ -100,11 +98,13 @@ NUITKA_ARGS=(
     --include-package=backend
     --include-package=frontend
     --include-package=utils
+    --include-package=streamlink
     
     --include-package-data=reportlab
     --include-package-data=pyqtgraph
     --include-package-data=insightface
     --include-package-data=onnxruntime
+    --include-package-data=streamlink
     
     --include-data-dir="frontend/assets=frontend/assets"
     --include-data-file="app_info.json=app_info.json"
@@ -116,9 +116,10 @@ NUITKA_ARGS=(
     --nofollow-import-to=onnxruntime.training
     --nofollow-import-to=onnxruntime.tools
     --nofollow-import-to=onnx.backend.test
-    --nofollow-import-to=insightface.thirdparty
     --nofollow-import-to=cv2.samples
     --nofollow-import-to=pyqtgraph.tests
+    --nofollow-import-to=pyqtgraph.opengl
+    --nofollow-import-to=pyqtgraph.exporters
     --nofollow-import-to=PySide6.QtWebEngine
     --nofollow-import-to=PySide6.QtWebEngineWidgets
     --nofollow-import-to=PySide6.QtWebEngineCore
@@ -191,8 +192,24 @@ if [[ -f "$EXE" ]]; then
     info "Executable : $EXE  ($SIZE)"
     info "Dist folder: $DIST_DIR"
     echo ""
+    
+    if command -v upx &> /dev/null; then
+        read -rp "Compress executable with UPX? (reduces size by ~70%) [y/N] " ans
+        if [[ "${ans,,}" == "y" ]]; then
+            info "Compressing with UPX..."
+            upx -9 "$EXE"
+            SIZE_AFTER=$(du -sh "$EXE" 2>/dev/null | cut -f1)
+            info "Compressed size: $SIZE_AFTER"
+        fi
+    else
+        warn "UPX not found. Install with: choco install upx"
+        warn "UPX can reduce executable size by ~70%"
+    fi
+    
+    echo ""
     info "To run: start \"\" \"$EXE\""
     echo ""
+    
     BUILD_CACHE="$OUT_DIR/main.build"
     if [[ -d "$BUILD_CACHE" ]]; then
         read -rp "Delete intermediate build cache ($BUILD_CACHE)? [y/N] " ans

@@ -43,7 +43,6 @@ class ExperimentalTab(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._inbox_toggle = None
-        self._analytics_preload = None
         self._preload_toggles: dict[str, ToggleSwitch] = {}
         self._build_ui()
 
@@ -74,20 +73,14 @@ class ExperimentalTab(QWidget):
             )
         )
 
-        self._analytics_preload = ToggleSwitch()
-        bl.addWidget(
-            _srow(
-                "Preload analytics page at startup",
-                self._analytics_preload,
-                hint="If off, analytics charts are created only when you open Analytics.",
-            )
-        )
+
 
         bl.addWidget(_make_sdiv("Page Preload"))
         for key, label in [
             ("dashboard", "Dashboard"),
             ("detectors", "Camera Manager"),
             ("rules", "Rules Manager"),
+            ("analytics", "Analytics"),
             ("models", "Models / Plugins"),
             ("faces", "Face Manager"),
             ("logs", "Logs Viewer"),
@@ -174,7 +167,6 @@ class ExperimentalTab(QWidget):
         db.set_setting("ghost_bbox_ttl", str(self._ghost_ttl.value()))
         db.set_setting("ghost_bbox_max_velocity", str(self._ghost_max_v.value()))
         db.set_setting("inbox_capture_enabled", "1" if self._inbox_toggle.isChecked() else "0")
-        db.set_setting("preload_analytics_page", "1" if self._analytics_preload.isChecked() else "0")
         for key, sw in self._preload_toggles.items():
             db.set_setting(f"preload_{key}_page", "1" if sw.isChecked() else "0")
         if db.get_bool("ui_show_save_popups", False):
@@ -208,6 +200,5 @@ class ExperimentalTab(QWidget):
         self._ghost_ttl.setValue(float(db.get_float("ghost_bbox_ttl", 0.35) or 0.35))
         self._ghost_max_v.setValue(int(float(db.get_float("ghost_bbox_max_velocity", 28) or 28)))
         self._inbox_toggle.setChecked(db.get_bool("inbox_capture_enabled", False))
-        self._analytics_preload.setChecked(db.get_setting("preload_analytics_page", "0") in ("1", 1, True, "true", "True"))
         for key, sw in self._preload_toggles.items():
             sw.setChecked(db.get_setting(f"preload_{key}_page", "0") in ("1", 1, True, "true", "True"))

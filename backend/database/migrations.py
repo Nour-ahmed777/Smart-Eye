@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 
-CURRENT_VERSION = 17
+CURRENT_VERSION = 18
 
 
 def apply(conn):
@@ -45,6 +45,8 @@ def apply(conn):
         _migrate_v16(conn)
     if version < 17:
         _migrate_v17(conn)
+    if version < 18:
+        _migrate_v18(conn)
     conn.execute(f"PRAGMA user_version = {CURRENT_VERSION}")
     conn.commit()
 
@@ -310,4 +312,25 @@ def _migrate_v16(conn):
 def _migrate_v17(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_rule_conditions_rule_id ON rule_conditions (rule_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_alarm_actions_rule_id ON alarm_actions (rule_id)")
+    conn.commit()
+
+
+def _migrate_v18(conn):
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS clips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            source TEXT DEFAULT 'live',
+            camera_id INTEGER REFERENCES cameras(id),
+            ts INTEGER,
+            face_label TEXT,
+            rules_triggered TEXT,
+            object_types TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_ts ON clips (ts)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_camera_id ON clips (camera_id)")
     conn.commit()

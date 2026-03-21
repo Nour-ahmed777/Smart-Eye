@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 
 import cv2
-from PySide6.QtCore import Qt, QSize, QSettings
+from PySide6.QtCore import Qt, QSize, QSettings, QTimer, QEvent, QDate
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -16,7 +17,11 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSplitter,
+    QToolButton,
+    QMenu,
+    QWidgetAction,
     QVBoxLayout,
+    QDateEdit,
     QWidget,
 )
 
@@ -31,6 +36,7 @@ from frontend.styles._colors import (
     _ACCENT,
     _ACCENT_BG_18,
     _ACCENT_BG_22,
+    _ACCENT_BG_12,
     _ACCENT_HI,
     _ACCENT_HI_BG_07,
     _ACCENT_HI_BG_22,
@@ -44,13 +50,16 @@ from frontend.styles._colors import (
     _BORDER_DIM,
     _DANGER,
     _SUCCESS,
+    _SUCCESS_BG_14,
+    _TEXT_ON_ACCENT,
     _TEXT_MUTED,
     _TEXT_PRI,
     _TEXT_SEC,
 )
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
-from frontend.styles._btn_styles import _PRIMARY_BTN, _ICON_BTN, _ICON_BTN_DANGER
+from frontend.styles._btn_styles import _PRIMARY_BTN, _ICON_BTN, _ICON_BTN_DANGER, _TEXT_BTN_GHOST
 from frontend.styles.page_styles import header_bar_style, toolbar_style
+from frontend.pages.playback._widgets import ClipRowWidget
 from frontend.ui_tokens import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_HEADING,
@@ -73,6 +82,7 @@ from frontend.ui_tokens import (
     SIZE_HEADER_H,
     SIZE_ICON_10,
     SIZE_PILL_H,
+    SIZE_ROW_XL,
     SIZE_SECTION_H,
     SIZE_TOOLBAR_H,
     SPACE_10,
@@ -95,12 +105,58 @@ _STYLESHEET = (
     + f"""
 {_FORM_INPUTS}
 {_FORM_COMBO}
+QDateEdit::drop-down {{ border: none; background: transparent; width: {SPACE_20}px; }}
+QDateEdit::down-arrow {{ image: url(frontend/assets/icons/arrow_down.png); width: {SPACE_10}px; height: {SPACE_10}px; }}
+QCalendarWidget QWidget {{ background-color: {_BG_SURFACE}; color: {_TEXT_PRI}; font-size: {FONT_SIZE_LABEL}px; }}
+QCalendarWidget QAbstractItemView {{
+    background-color: {_BG_SURFACE}; color: {_TEXT_PRI};
+    selection-background-color: {_ACCENT}; selection-color: {_TEXT_ON_ACCENT};
+    outline: none;
+}}
+QCalendarWidget QAbstractItemView:disabled {{ color: {_TEXT_MUTED}; }}
+QCalendarWidget QAbstractItemView::item {{
+    text-align: center;
+}}
+QCalendarWidget QToolButton {{
+    background: transparent; color: {_TEXT_PRI};
+    border: none; border-radius: {RADIUS_6}px; padding: {SPACE_XS}px {SPACE_SM}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; font-size: {FONT_SIZE_LABEL}px;
+}}
+QCalendarWidget QToolButton:hover {{ background: {_BG_OVERLAY}; }}
+QCalendarWidget QToolButton#qt_calendar_prevmonth,
+QCalendarWidget QToolButton#qt_calendar_nextmonth {{
+    color: {_ACCENT_HI}; font-size: {FONT_SIZE_LABEL}px; padding: {SPACE_XS}px {SPACE_10}px;
+}}
+QCalendarWidget QSpinBox {{
+    background: {_BG_RAISED}; color: {_TEXT_PRI};
+    border: {SPACE_XXXS}px solid {_BORDER}; border-radius: {RADIUS_6}px; padding: {SPACE_XXS}px {SPACE_6}px; font-size: {FONT_SIZE_LABEL}px;
+}}
+QCalendarWidget QMenu {{
+    background: {_BG_OVERLAY}; color: {_TEXT_PRI};
+    border: {SPACE_XXXS}px solid {_BORDER};
+}}
+QCalendarWidget #qt_calendar_navigationbar {{
+    background: {_BG_RAISED}; padding: {SPACE_XS}px;
+}}
+QCalendarWidget #qt_calendar_calendarview {{
+    background: {_BG_SURFACE};
+}}
 QSlider::groove:horizontal {{
     height: {SPACE_XS}px; background: {_BG_OVERLAY}; border-radius: {RADIUS_XS}px;
 }}
 QSlider::handle:horizontal {{
-    background: {_ACCENT_HI}; border: {SPACE_XXS}px solid {_ACCENT};
-    width: {SPACE_14}px; height: {SPACE_14}px; margin: -{SPACE_5}px 0; border-radius: {RADIUS_MD}px;
+    background: {_ACCENT_HI};
+    width: {SPACE_14}px; height: {SPACE_14}px;
+    margin: -{SPACE_5}px 0;
+    border: none;
+    border-radius: 999px;
+}}
+QSlider#timeline_slider::handle:horizontal {{
+    background: {_ACCENT_HI};
+    width: {SPACE_14}px; height: {SPACE_14}px;
+    margin: -{SPACE_5}px 0;
+    border: none;
+    border-radius: 999px;
+    image: none;
 }}
 QSlider::sub-page:horizontal {{ background: {_ACCENT}; border-radius: {RADIUS_XS}px; }}
 QListWidget {{ background: transparent; border: none; outline: none; }}
@@ -109,8 +165,18 @@ QListWidget::item {{
 }}
 QListWidget::item:selected {{ background: {_ACCENT_BG_18}; color: {_TEXT_PRI}; }}
 QListWidget::item:hover:!selected {{ background: {_ACCENT_HI_BG_07}; color: {_TEXT_PRI}; }}
-QListWidget#clips_list::item {{ padding: {SPACE_6}px {SPACE_10}px; color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; }}
+QListWidget#clips_list {{ background: {_BG_BASE}; }}
+QListWidget#clips_list::item {{ padding: 0; color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; }}
 QListWidget#clips_list::item:selected {{ color: {_TEXT_PRI}; }}
+QListWidget#clips_list {{ padding-bottom: {SPACE_SM}px; }}
+QPushButton#clip_delete {{
+    background: transparent;
+    border: none;
+    padding: 0;
+}}
+QPushButton#clip_delete:hover {{
+    background: transparent;
+}}
 QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_6}px; margin: {SPACE_XXS}px 0; }}
     QScrollBar::handle:vertical {{
         background: {_ACCENT_HI_BG_22}; min-height: {SIZE_CONTROL_SM}px; border-radius: {RADIUS_3}px;
@@ -132,6 +198,13 @@ def _icon_btn(icon_path: str, size: int = 36, danger: bool = False) -> QPushButt
     return btn
 
 
+def _set_list_active(list_widget: QListWidget, item: QListWidgetItem, activate_cb) -> None:
+    if list_widget and item:
+        list_widget.setCurrentItem(item)
+    if activate_cb:
+        activate_cb(item)
+
+
 class PlaybackPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -143,6 +216,21 @@ class PlaybackPage(QWidget):
         self._video_fps = 30.0
         self._saved_clips: list[str] = []
         self._rule_camera_id = -1
+        self._user_seeking = False
+        self._seek_was_playing = False
+        self._seek_pending: int | None = None
+        self._seek_timer = QTimer(self)
+        self._seek_timer.setInterval(40)
+        self._seek_timer.setSingleShot(True)
+        self._seek_timer.timeout.connect(self._flush_seek)
+        self._clip_cards: list[tuple[QListWidgetItem, ClipRowWidget]] = []
+        self._filters_ready = False
+        self._clip_filter_camera = None
+        self._clip_filter_rule = None
+        self._clip_filter_object = None
+        self._clip_filter_face = None
+        self._clip_filter_from = None
+        self._clip_filter_to = None
         self._build_ui()
         self._load_rule_cameras()
 
@@ -233,6 +321,7 @@ class PlaybackPage(QWidget):
         self._record_toggle.setToolTip("Saves a clip to data/clips/ when a rule fires. Requires Detection ON.")
         self._record_toggle.toggled.connect(self._on_record_toggled)
         tl.addWidget(self._record_toggle)
+        self._load_playback_toggle_settings()
 
         _sep3 = QWidget()
         _sep3.setFixedSize(SPACE_XXXS, SPACE_XL)
@@ -280,8 +369,29 @@ class PlaybackPage(QWidget):
         cc.setSpacing(SPACE_10)
 
         self._timeline_slider = QSlider(Qt.Orientation.Horizontal)
+        self._timeline_slider.setObjectName("timeline_slider")
         self._timeline_slider.setRange(0, 100)
         self._timeline_slider.setValue(0)
+        self._timeline_slider.setStyleSheet(
+            f"""
+QSlider::groove:horizontal {{
+    height: {SPACE_XS}px; background: {_BG_OVERLAY}; border-radius: {RADIUS_XS}px;
+}}
+QSlider::sub-page:horizontal {{
+    background: {_ACCENT}; border-radius: {RADIUS_XS}px;
+}}
+QSlider::handle:horizontal {{
+    background: {_ACCENT_HI};
+    width: {SPACE_14}px; height: {SPACE_14}px;
+    margin: -{SPACE_5}px 0;
+    border: none;
+    border-radius: {SPACE_14 // 2}px;
+    image: none;
+}}
+"""
+        )
+        self._timeline_slider.sliderPressed.connect(self._on_seek_pressed)
+        self._timeline_slider.sliderMoved.connect(self._on_seek_moved)
         self._timeline_slider.sliderReleased.connect(self._on_seek)
         cc.addWidget(self._timeline_slider)
 
@@ -289,14 +399,9 @@ class PlaybackPage(QWidget):
         ctrl_row.setSpacing(SPACE_6)
 
         self._play_btn = _icon_btn("frontend/assets/icons/play.png", SIZE_SECTION_H)
-        self._play_btn.setToolTip("Play / Resume")
+        self._play_btn.setToolTip("Play / Pause")
         self._play_btn.clicked.connect(self._toggle_play)
         ctrl_row.addWidget(self._play_btn)
-
-        self._pause_btn = _icon_btn("frontend/assets/icons/pause.png", SIZE_SECTION_H)
-        self._pause_btn.setToolTip("Pause")
-        self._pause_btn.clicked.connect(self._pause)
-        ctrl_row.addWidget(self._pause_btn)
 
         self._stop_btn = _icon_btn("frontend/assets/icons/stop.png", SIZE_SECTION_H, danger=True)
         self._stop_btn.setToolTip("Stop")
@@ -407,14 +512,125 @@ class PlaybackPage(QWidget):
         clips_hdr_l.addStretch()
         ccv.addWidget(clips_hdr_w)
 
+        filters_btn = QToolButton()
+        filters_btn.setText("Filters")
+        filters_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        filters_btn.setIcon(QIcon("frontend/assets/icons/arrow_down.png"))
+        filters_btn.setIconSize(QSize(SIZE_ICON_10, SIZE_ICON_10))
+        filters_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        filters_btn.setStyleSheet(
+            f"QToolButton {{"
+            f" background: {_BG_RAISED};"
+            f" border: {SPACE_XXXS}px solid {_BORDER};"
+            f" border-radius: {RADIUS_MD}px;"
+            f" padding: 0 {SPACE_14}px;"
+            f" color: {_TEXT_PRI};"
+            f" min-height: {SIZE_SECTION_H}px;"
+            f"}}"
+            f"QToolButton:hover {{ background: {_BG_OVERLAY}; }}"
+            f"QToolButton:pressed {{ background: {_BG_OVERLAY}; }}"
+            f"QToolButton::menu-indicator {{ image: none; }}"
+        )
+
+        filters_menu = QMenu(filters_btn)
+        filters_menu.setStyleSheet(
+            f"QMenu {{"
+            f" background: {_BG_RAISED};"
+            f" border: {SPACE_XXXS}px solid {_BORDER};"
+            f" border-radius: {RADIUS_MD}px;"
+            f" padding: {SPACE_XXS}px;"
+            f"}}"
+        )
+        filters_widget = QWidget()
+        filters_widget.setStyleSheet(
+            f"background: {_BG_RAISED}; border-radius: {RADIUS_MD}px; border: {SPACE_XXXS}px solid {_BORDER};"
+        )
+        fl = QVBoxLayout(filters_widget)
+        fl.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        fl.setSpacing(SPACE_SM)
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(SPACE_SM)
+        self._clip_filter_face = QLineEdit()
+        self._clip_filter_face.setPlaceholderText("Face label")
+        self._clip_filter_face.setFixedHeight(SIZE_SECTION_H)
+        self._clip_filter_face.setStyleSheet(_FORM_INPUTS)
+        row1.addWidget(self._clip_filter_face, stretch=1)
+
+        self._clip_filter_camera = QComboBox()
+        self._clip_filter_camera.setFixedHeight(SIZE_SECTION_H)
+        self._clip_filter_camera.setStyleSheet(_FORM_COMBO)
+        row1.addWidget(self._clip_filter_camera)
+
+        self._clip_filter_rule = QComboBox()
+        self._clip_filter_rule.setFixedHeight(SIZE_SECTION_H)
+        self._clip_filter_rule.setStyleSheet(_FORM_COMBO)
+        row1.addWidget(self._clip_filter_rule)
+
+        fl.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setSpacing(SPACE_SM)
+        self._clip_filter_object = QComboBox()
+        self._clip_filter_object.setFixedHeight(SIZE_SECTION_H)
+        self._clip_filter_object.setStyleSheet(_FORM_COMBO)
+        row2.addWidget(self._clip_filter_object)
+
+        self._clip_filter_from = QDateEdit()
+        self._clip_filter_from.setCalendarPopup(True)
+        self._clip_filter_from.setDisplayFormat("yyyy-MM-dd")
+        self._clip_filter_from.setMinimumDate(QDate(1970, 1, 1))
+        self._clip_filter_from.setSpecialValueText("From")
+        self._clip_filter_from.setDate(self._clip_filter_from.minimumDate())
+        self._clip_filter_from.setFixedHeight(SIZE_SECTION_H)
+        self._clip_filter_from.setStyleSheet(_FORM_INPUTS)
+        row2.addWidget(self._clip_filter_from)
+
+        self._clip_filter_to = QDateEdit()
+        self._clip_filter_to.setCalendarPopup(True)
+        self._clip_filter_to.setDisplayFormat("yyyy-MM-dd")
+        self._clip_filter_to.setMinimumDate(QDate(1970, 1, 1))
+        self._clip_filter_to.setSpecialValueText("To")
+        self._clip_filter_to.setDate(self._clip_filter_to.minimumDate())
+        self._clip_filter_to.setFixedHeight(SIZE_SECTION_H)
+        self._clip_filter_to.setStyleSheet(_FORM_INPUTS)
+        row2.addWidget(self._clip_filter_to)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.setStyleSheet(_TEXT_BTN_GHOST)
+        row2.addWidget(clear_btn)
+        fl.addLayout(row2)
+
+        action = QWidgetAction(filters_menu)
+        action.setDefaultWidget(filters_widget)
+        filters_menu.addAction(action)
+        filters_btn.setMenu(filters_menu)
+        clips_hdr_l.addWidget(filters_btn)
+
+        self._load_clip_filters()
+
+        self._clip_filter_face.textChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_camera.currentIndexChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_rule.currentIndexChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_object.currentIndexChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_from.dateChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_to.dateChanged.connect(self._on_clip_filters_changed)
+        clear_btn.clicked.connect(self._clear_clip_filters)
+
         self._clips_list = QListWidget()
         self._clips_list.setObjectName("clips_list")
         self._clips_list.setAlternatingRowColors(True)
         self._clips_list.viewport().setAutoFillBackground(False)
         self._clips_list.viewport().setStyleSheet("background: transparent;")
         self._clips_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._clips_list.setSpacing(SPACE_XXS)
+        self._clips_list.setUniformItemSizes(True)
+        self._clips_list.setViewportMargins(0, 0, 0, SPACE_SM)
         self._clips_list.itemClicked.connect(self._on_clip_item_activated)
+        self._clips_list.currentItemChanged.connect(self._sync_clip_card_selection)
+        self._clips_list.viewport().installEventFilter(self)
         ccv.addWidget(self._clips_list, stretch=1)
+        self._filters_ready = True
 
         self._clip_status = QLabel("")
         self._clip_status.setStyleSheet(
@@ -468,13 +684,21 @@ class PlaybackPage(QWidget):
             return
         self._start_playback(path)
 
+    def eventFilter(self, obj, event):
+        if obj is self._clips_list.viewport() and event.type() == QEvent.Type.MouseButtonPress:
+            if self._clips_list.itemAt(event.pos()) is None:
+                self._clips_list.clearSelection()
+                self._sync_clip_card_selection(None, None)
+        return super().eventFilter(obj, event)
+
     def _on_frame(self, camera_id, frame, state) -> None:
         frame_idx = state.get("frame_index", 0)
         self._current_frame = frame_idx
         self._video_widget.update_frame(frame, state)
-        self._timeline_slider.blockSignals(True)
-        self._timeline_slider.setValue(frame_idx)
-        self._timeline_slider.blockSignals(False)
+        if not self._user_seeking:
+            self._timeline_slider.blockSignals(True)
+            self._timeline_slider.setValue(frame_idx)
+            self._timeline_slider.blockSignals(False)
         if self._total_frames > 0:
             cur_sec = frame_idx / self._video_fps
             total_sec = self._total_frames / self._video_fps
@@ -496,12 +720,30 @@ class PlaybackPage(QWidget):
         self._clip_status.setText(message)
 
     def _on_detection_toggled(self, state: bool) -> None:
+        try:
+            db.set_setting("playback_detection_enabled", bool(state))
+        except Exception:
+            pass
         if self._playback_thread:
             self._playback_thread.set_detection_enabled(state)
 
     def _on_record_toggled(self, state: bool) -> None:
+        try:
+            db.set_setting("playback_record_enabled", bool(state))
+        except Exception:
+            pass
         if self._playback_thread:
             self._playback_thread.set_record_enabled(state)
+
+    def _load_playback_toggle_settings(self) -> None:
+        try:
+            det = db.get_bool("playback_detection_enabled", False)
+            rec = db.get_bool("playback_record_enabled", False)
+            self._detect_toggle.setChecked(bool(det))
+            self._record_toggle.setChecked(bool(rec))
+        except Exception:
+            self._detect_toggle.setChecked(False)
+            self._record_toggle.setChecked(False)
 
     def _on_event_clicked(self, item) -> None:
         idx = self._events_list.row(item)
@@ -511,19 +753,23 @@ class PlaybackPage(QWidget):
                 self._playback_thread.seek(frame_idx)
 
     def _on_finished(self, camera_id=None) -> None:
-        pass
+        self._sync_play_button(paused=True)
 
     def _toggle_play(self) -> None:
         if self._playback_thread is None:
+            if self._path_edit.text():
+                self._start_playback(self._path_edit.text())
+            return
+        if not self._playback_thread.isRunning():
+            if self._path_edit.text():
+                self._start_playback(self._path_edit.text())
             return
         if self._playback_thread.is_paused:
             self._playback_thread.resume()
+            self._sync_play_button(paused=False)
         else:
             self._playback_thread.pause()
-
-    def _pause(self) -> None:
-        if self._playback_thread:
-            self._playback_thread.pause()
+            self._sync_play_button(paused=True)
 
     def _stop(self) -> None:
         if self._playback_thread:
@@ -534,15 +780,50 @@ class PlaybackPage(QWidget):
         self._timeline_slider.setValue(0)
         self._fps_label.setText("FPS: —")
         self._time_label.setText("00:00:00 / 00:00:00")
+        self._sync_play_button(paused=True)
+
+    def _on_seek_pressed(self) -> None:
+        self._user_seeking = True
+        self._seek_was_playing = False
+        if self._playback_thread and self._playback_thread.isRunning():
+            self._seek_was_playing = not self._playback_thread.is_paused
+            self._playback_thread.pause()
+            self._sync_play_button(paused=True)
+
+    def _on_seek_moved(self, value: int) -> None:
+        if self._total_frames > 0:
+            cur_sec = value / self._video_fps
+            total_sec = self._total_frames / self._video_fps
+            self._time_label.setText(f"{self._format_time(cur_sec)} / {self._format_time(total_sec)}")
+        self._seek_pending = value
+        if not self._seek_timer.isActive():
+            self._seek_timer.start()
 
     def _on_seek(self) -> None:
         if self._playback_thread:
             self._playback_thread.seek(self._timeline_slider.value())
+            if self._seek_was_playing:
+                self._playback_thread.resume()
+                self._sync_play_button(paused=False)
+        self._user_seeking = False
+        self._seek_was_playing = False
+        self._seek_pending = None
+
+    def _flush_seek(self) -> None:
+        if self._seek_pending is None:
+            return
+        if self._playback_thread:
+            self._playback_thread.seek(self._seek_pending)
 
     def _change_speed(self, idx: int) -> None:
+        self._apply_speed()
+
+    def _apply_speed(self) -> None:
         speeds = [0.25, 0.5, 1.0, 2.0, 4.0]
+        idx = self._speed_combo.currentIndex()
         if self._playback_thread and idx < len(speeds):
-            self._playback_thread.set_fps_limit(int(30 * speeds[idx]))
+            base_fps = self._video_fps or 30.0
+            self._playback_thread.set_fps_limit(max(0.25, base_fps * speeds[idx]))
 
     def _save_snapshot(self) -> None:
         if not hasattr(self._video_widget, "_last_frame") or self._video_widget._last_frame is None:
@@ -551,35 +832,194 @@ class PlaybackPage(QWidget):
         if path:
             cv2.imwrite(path, self._video_widget._last_frame)
 
-    def _refresh_clips_list(self) -> None:
-        self._clips_list.clear()
-        entries: list[tuple[float, str, str]] = []
-        for folder, tag in (("data/clips_live", "live"), ("data/clips", "playback")):
+    def _load_clip_filters(self) -> None:
+        self._clip_filter_camera.clear()
+        self._clip_filter_camera.addItem("All Cameras", -1)
+        try:
+            for cam in db.get_cameras(enabled_only=False) or []:
+                self._clip_filter_camera.addItem(cam.get("name", f"Camera {cam.get('id')}"), int(cam.get("id")))
+        except Exception:
+            pass
+
+        self._clip_filter_rule.clear()
+        self._clip_filter_rule.addItem("Any Rule", "")
+        try:
+            for rule in db.get_rules(enabled_only=False) or []:
+                self._clip_filter_rule.addItem(rule.get("name", "Rule"), rule.get("name", ""))
+        except Exception:
+            pass
+
+        self._clip_filter_object.clear()
+        self._clip_filter_object.addItem("Any Object", "")
+        try:
+            classes = db.get_plugin_classes(enabled_only=True) or []
+            seen = set()
+            for cls in classes:
+                name = cls.get("class_name")
+                if name and name not in seen:
+                    seen.add(name)
+                    self._clip_filter_object.addItem(name, name)
+        except Exception:
+            pass
+
+    def _on_clip_filters_changed(self, _value=None) -> None:
+        if not self._filters_ready or not hasattr(self, "_clips_list"):
+            return
+        self._refresh_clips_list()
+
+    def _clear_clip_filters(self) -> None:
+        self._clip_filter_face.setText("")
+        self._clip_filter_camera.setCurrentIndex(0)
+        self._clip_filter_rule.setCurrentIndex(0)
+        self._clip_filter_object.setCurrentIndex(0)
+        self._clip_filter_from.setDate(self._clip_filter_from.minimumDate())
+        self._clip_filter_to.setDate(self._clip_filter_to.minimumDate())
+        self._refresh_clips_list()
+
+    def _get_clip_filter_values(self) -> dict:
+        camera_id = self._clip_filter_camera.currentData()
+        face_label = self._clip_filter_face.text().strip()
+        rule_name = self._clip_filter_rule.currentData()
+        object_type = self._clip_filter_object.currentData()
+
+        ts_from = None
+        ts_to = None
+        min_date = self._clip_filter_from.minimumDate()
+        if self._clip_filter_from.date() != min_date:
+            d = self._clip_filter_from.date()
+            dt = datetime(d.year(), d.month(), d.day(), 0, 0, 0)
+            ts_from = int(dt.timestamp())
+        if self._clip_filter_to.date() != min_date:
+            d = self._clip_filter_to.date()
+            dt = datetime(d.year(), d.month(), d.day(), 23, 59, 59)
+            ts_to = int(dt.timestamp())
+
+        return {
+            "camera_id": camera_id,
+            "face_label": face_label or None,
+            "rule_triggered": rule_name or None,
+            "object_type": object_type or None,
+            "ts_from": ts_from,
+            "ts_to": ts_to,
+        }
+
+    @staticmethod
+    def _parse_clip_filename(name: str) -> tuple[int | None, int | None, str]:
+        if name.startswith("clip_cam") and "_" in name:
+            try:
+                rest = name.replace("clip_cam", "", 1)
+                cam_part, ts_part = rest.split("_", 1)
+                cam_id = int(cam_part)
+                ts = int(ts_part.split(".", 1)[0])
+                return cam_id, ts, "live"
+            except Exception:
+                return None, None, "live"
+        if name.startswith("clip_"):
+            try:
+                ts = int(name.replace("clip_", "", 1).split(".", 1)[0])
+                return None, ts, "playback"
+            except Exception:
+                return None, None, "playback"
+        return None, None, "playback"
+
+    def _sync_clips_index(self) -> None:
+        try:
+            existing = {row.get("path") for row in db.get_clips() or []}
+        except Exception:
+            existing = set()
+        for folder in ("data/clips_live", "data/clips"):
             if not os.path.isdir(folder):
                 continue
             for name in os.listdir(folder):
                 if not name.lower().endswith((".mp4", ".avi", ".mkv", ".mov", ".wmv")):
                     continue
                 path = os.path.join(folder, name)
+                if path in existing:
+                    continue
+                cam_id, ts, source = self._parse_clip_filename(name)
+                if ts is None:
+                    try:
+                        ts = int(os.path.getmtime(path))
+                    except Exception:
+                        ts = None
                 try:
-                    ts = os.path.getmtime(path)
+                    db.add_clip(path, source, cam_id, ts, None, [], [])
                 except Exception:
-                    ts = 0.0
-                entries.append((ts, tag, path))
-        entries.sort(key=lambda x: x[0], reverse=True)
-        if not entries:
+                    pass
+
+    def _refresh_clips_list(self) -> None:
+        selected_path = None
+        cur = self._clips_list.currentItem()
+        if cur:
+            selected_path = cur.data(Qt.ItemDataRole.UserRole)
+        self._clips_list.clear()
+        self._clip_cards.clear()
+        self._sync_clips_index()
+        filters = self._get_clip_filter_values()
+        try:
+            rows = db.get_clips(
+                camera_id=filters["camera_id"],
+                ts_from=filters["ts_from"],
+                ts_to=filters["ts_to"],
+                face_label=filters["face_label"],
+                object_type=filters["object_type"],
+                rule_triggered=filters["rule_triggered"],
+            )
+        except Exception:
+            rows = []
+
+        if not rows:
             self._clip_status.setText("No clips saved yet")
             return
-        for _ts, tag, path in entries:
-            name = os.path.basename(path)
-            item = QListWidgetItem(f"[{tag}] {name}")
+        selected_item = None
+        for row in rows:
+            path = row.get("path")
+            if not path or not os.path.exists(path):
+                continue
+            ts = row.get("ts")
+            if not ts:
+                try:
+                    ts = int(os.path.getmtime(path))
+                except Exception:
+                    ts = 0
+            source = row.get("source") or "playback"
+            name = os.path.splitext(os.path.basename(path))[0]
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, path)
+            item.setSizeHint(QSize(0, SIZE_ROW_XL))
+            row_w = ClipRowWidget(name, source, ts, path)
+            row_w.clicked.connect(lambda _=False, lw=self._clips_list, it=item: _set_list_active(lw, it, self._on_clip_item_activated))
+            row_w.set_delete_callback(lambda p=path: self._delete_clip(p))
             self._clips_list.addItem(item)
+            self._clips_list.setItemWidget(item, row_w)
+            self._clip_cards.append((item, row_w))
+            if selected_path and path == selected_path:
+                selected_item = item
+        if selected_item:
+            self._clips_list.setCurrentItem(selected_item)
+        self._sync_clip_card_selection(self._clips_list.currentItem(), None)
 
     def _on_clip_item_activated(self, item) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)
         if path and os.path.exists(path):
             self._start_playback(path)
+
+    def _sync_clip_card_selection(self, current: QListWidgetItem | None, _previous: QListWidgetItem | None) -> None:
+        for it, card in self._clip_cards:
+            card.set_active(it is current)
+
+    def _delete_clip(self, path: str) -> None:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+            try:
+                db.delete_clip(path)
+            except Exception:
+                pass
+            self._clip_status.setText(f"Deleted: {os.path.basename(path)}")
+        except Exception as e:
+            self._clip_status.setText(f"Delete failed: {e}")
+        self._refresh_clips_list()
     def _load_rule_cameras(self) -> None:
         self._rule_combo.clear()
         self._rule_combo.addItem("Global (no camera)", -1)
@@ -623,7 +1063,7 @@ class PlaybackPage(QWidget):
             self._fps_label.setText(f"FPS: {fps:.0f}")
             total_sec = self._total_frames / fps
             self._time_label.setText(f"00:00:00 / {self._format_time(total_sec)}")
-            self._timeline_slider.setRange(0, self._total_frames)
+            self._timeline_slider.setRange(0, max(0, self._total_frames - 1))
             cap.release()
         self._events_list.clear()
         self._events = []
@@ -632,6 +1072,15 @@ class PlaybackPage(QWidget):
         self._refresh_clips_list()
         self._clip_status.setText("")
         self._playback_thread.start()
+        self._sync_play_button(paused=False)
+        self._apply_speed()
+
+    def _sync_play_button(self, paused: bool) -> None:
+        icon_path = "frontend/assets/icons/play.png" if paused else "frontend/assets/icons/pause.png"
+        pix = QPixmap(icon_path)
+        if not pix.isNull():
+            self._play_btn.setIcon(QIcon(pix))
+            self._play_btn.setIconSize(QSize(int(SIZE_SECTION_H * 0.52), int(SIZE_SECTION_H * 0.52)))
 
     @staticmethod
     def _format_time(seconds: float) -> str:
