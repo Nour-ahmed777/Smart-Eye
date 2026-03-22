@@ -43,7 +43,7 @@ jobs:
           mode: standalone
           output-dir: build
           output-file: SmartEye
-          jobs: "2"
+          jobs: "4"
           lto: "yes"
           windows-console-mode: disable
           enable-plugins: pyside6
@@ -171,8 +171,8 @@ jobs:
           
           Name "`${APPNAME} Setup"
           
-          !define MUI_ICON "frontend\assets\icon.ico"
-          !define MUI_UNICON "frontend\assets\icon.ico"
+          !define MUI_ICON "frontend\assets\icons\icon.ico"
+          !define MUI_UNICON "frontend\assets\icons\icon.ico"
           
           !include "MUI2.nsh"
           
