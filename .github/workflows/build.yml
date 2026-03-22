@@ -232,24 +232,6 @@ jobs:
           
           Write-Host "Installer created successfully!"
 
-      - name: Compress installer with UPX
-        shell: pwsh
-        run: |
-          $installerPath = Join-Path $PWD "build\SmartEyeInstaller.exe"
-          if (Test-Path $installerPath) {
-            $sizeBefore = (Get-Item $installerPath).Length / 1MB
-            Write-Host "Installer size before UPX: $([math]::Round($sizeBefore, 2)) MB"
-            
-            Write-Host "Compressing installer with UPX (maximum compression)..."
-            upx -9 $installerPath
-            
-            $sizeAfter = (Get-Item $installerPath).Length / 1MB
-            Write-Host "Installer size after UPX: $([math]::Round($sizeAfter, 2)) MB"
-            Write-Host "Compression saved: $([math]::Round($sizeBefore - $sizeAfter, 2)) MB ($([math]::Round((($sizeBefore - $sizeAfter) / $sizeBefore) * 100, 1))% reduction)"
-          } else {
-            Write-Host "Warning: Installer not found at $installerPath"
-          }
-
       - name: Collect release files
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: release_files
