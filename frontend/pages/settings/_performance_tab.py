@@ -139,6 +139,48 @@ class PerformanceTab(QWidget):
             )
         )
 
+        bl.addWidget(_make_sdiv("UI & Tabs"))
+
+        self._pause_tabs = ToggleSwitch()
+        bl.addWidget(
+            _srow(
+                "Pause inactive tabs",
+                self._pause_tabs,
+                hint="Stops timers and UI updates when a tab is not active.",
+            )
+        )
+
+        self._unload_tabs = ToggleSwitch()
+        bl.addWidget(
+            _srow(
+                "Unload heavy tabs on leave",
+                self._unload_tabs,
+                hint="Destroys video-heavy pages when you switch away to free memory.",
+            )
+        )
+
+        self._unload_idle_min = QSpinBox()
+        self._unload_idle_min.setRange(1, 60)
+        self._unload_idle_min.setValue(5)
+        self._unload_idle_min.setSuffix(" min")
+        self._unload_idle_min.setFixedHeight(_FIELD_H)
+        bl.addWidget(
+            _srow(
+                "Unload idle tabs after",
+                self._unload_idle_min,
+                hint="Idle tabs are unloaded after this many minutes.",
+            )
+        )
+
+        self._auto_pause_live = ToggleSwitch()
+        bl.addWidget(
+            _srow(
+                "Auto-stop live cameras when idle",
+                self._auto_pause_live,
+                hint="Stops all cameras when no monitoring tabs are active. Restarts when returning.",
+            )
+        )
+
         bl.addStretch()
         bl.addWidget(self._make_action_bar())
 
@@ -169,6 +211,10 @@ class PerformanceTab(QWidget):
         db.set_setting("detection_interval", str(self._detection_interval.value()))
         db.set_setting("limit_resources", 1 if self._limit_resources.isChecked() else 0)
         db.set_setting("max_resolution", self._max_resolution.currentText())
+        db.set_setting("ui_pause_inactive_tabs", 1 if self._pause_tabs.isChecked() else 0)
+        db.set_setting("ui_unload_on_leave", 1 if self._unload_tabs.isChecked() else 0)
+        db.set_setting("ui_unload_idle_min", str(self._unload_idle_min.value()))
+        db.set_setting("auto_pause_live_when_idle", 1 if self._auto_pause_live.isChecked() else 0)
 
         try:
             from utils.resource_limiter import apply_limits
@@ -193,6 +239,21 @@ class PerformanceTab(QWidget):
         else:
             self._flash_status("Saved")
             logger.info("Performance settings saved.")
+
+    def load(self) -> None:
+        self._gpu_toggle.setChecked(db.get_bool("gpu_enabled", False))
+        self._max_threads.setValue(int(db.get_int("max_threads", 4) or 4))
+        self._frame_skip.setValue(int(db.get_int("frame_skip", 0) or 0))
+        self._detection_interval.setValue(int(db.get_int("detection_interval", 3) or 3))
+        self._limit_resources.setChecked(db.get_bool("limit_resources", False))
+        max_res = db.get_setting("max_resolution", "Original")
+        idx = self._max_resolution.findText(max_res)
+        self._max_resolution.setCurrentIndex(idx if idx >= 0 else 0)
+
+        self._pause_tabs.setChecked(db.get_bool("ui_pause_inactive_tabs", True))
+        self._unload_tabs.setChecked(db.get_bool("ui_unload_on_leave", True))
+        self._unload_idle_min.setValue(int(db.get_int("ui_unload_idle_min", 5) or 5))
+        self._auto_pause_live.setChecked(db.get_bool("auto_pause_live_when_idle", False))
 
     def _flash_status(self, text: str) -> None:
         self._status_lbl.setText(text)
