@@ -673,6 +673,14 @@ QSlider::handle:horizontal {{
     def on_activated(self) -> None:
         self._refresh_clips_list()
 
+    def on_deactivated(self) -> None:
+        self._seek_timer.stop()
+        self._stop()
+
+    def on_unload(self) -> None:
+        self._seek_timer.stop()
+        self._stop()
+
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
