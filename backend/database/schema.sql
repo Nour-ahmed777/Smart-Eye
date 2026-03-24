@@ -214,6 +214,10 @@ INSERT OR IGNORE INTO app_settings VALUES ('insightface_model_dir', '', 'string'
 INSERT OR IGNORE INTO app_settings VALUES ('insightface_root_cache', '', 'string', 'InsightFace Root Cache', 'detection');
 INSERT OR IGNORE INTO app_settings VALUES ('insightface_allowed_modules', '["detection","recognition"]', 'json', 'Allowed InsightFace Modules', 'detection');
 INSERT OR IGNORE INTO app_settings VALUES ('limit_resources', '0', 'bool', 'Limit Resource Usage', 'performance');
+INSERT OR IGNORE INTO app_settings VALUES ('ui_pause_inactive_tabs', '1', 'bool', 'Pause inactive tabs', 'performance');
+INSERT OR IGNORE INTO app_settings VALUES ('ui_unload_on_leave', '1', 'bool', 'Unload heavy tabs on leave', 'performance');
+INSERT OR IGNORE INTO app_settings VALUES ('ui_unload_idle_min', '5', 'int', 'Unload idle tabs after (min)', 'performance');
+INSERT OR IGNORE INTO app_settings VALUES ('auto_pause_live_when_idle', '0', 'bool', 'Auto-stop live cameras when idle', 'performance');
 
 CREATE INDEX IF NOT EXISTS idx_detection_logs_timestamp ON detection_logs (timestamp);
 CREATE INDEX IF NOT EXISTS idx_detection_logs_camera_id ON detection_logs (camera_id);

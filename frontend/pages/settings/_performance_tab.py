@@ -44,6 +44,7 @@ class PerformanceTab(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._build_ui()
+        self.load()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -240,21 +241,6 @@ class PerformanceTab(QWidget):
             self._flash_status("Saved")
             logger.info("Performance settings saved.")
 
-    def load(self) -> None:
-        self._gpu_toggle.setChecked(db.get_bool("gpu_enabled", False))
-        self._max_threads.setValue(int(db.get_int("max_threads", 4) or 4))
-        self._frame_skip.setValue(int(db.get_int("frame_skip", 0) or 0))
-        self._detection_interval.setValue(int(db.get_int("detection_interval", 3) or 3))
-        self._limit_resources.setChecked(db.get_bool("limit_resources", False))
-        max_res = db.get_setting("max_resolution", "Original")
-        idx = self._max_resolution.findText(max_res)
-        self._max_resolution.setCurrentIndex(idx if idx >= 0 else 0)
-
-        self._pause_tabs.setChecked(db.get_bool("ui_pause_inactive_tabs", True))
-        self._unload_tabs.setChecked(db.get_bool("ui_unload_on_leave", True))
-        self._unload_idle_min.setValue(int(db.get_int("ui_unload_idle_min", 5) or 5))
-        self._auto_pause_live.setChecked(db.get_bool("auto_pause_live_when_idle", False))
-
     def _flash_status(self, text: str) -> None:
         self._status_lbl.setText(text)
         self._status_lbl.setVisible(True)
@@ -275,11 +261,15 @@ class PerformanceTab(QWidget):
 
     def load(self) -> None:
         self._gpu_toggle.setChecked(db.get_bool("gpu_enabled", False))
-        self._max_threads.setValue(int(db.get_setting("max_threads", "4")))
-        self._frame_skip.setValue(int(db.get_setting("frame_skip", "0")))
-        self._detection_interval.setValue(int(db.get_setting("detection_interval", "3")))
+        self._max_threads.setValue(int(db.get_int("max_threads", 4) or 4))
+        self._frame_skip.setValue(int(db.get_int("frame_skip", 0) or 0))
+        self._detection_interval.setValue(int(db.get_int("detection_interval", 3) or 3))
         self._limit_resources.setChecked(db.get_bool("limit_resources", False))
-        res = db.get_setting("max_resolution", "1280x720")
-        idx = self._max_resolution.findText(res)
-        if idx >= 0:
-            self._max_resolution.setCurrentIndex(idx)
+        max_res = db.get_setting("max_resolution", "Original")
+        idx = self._max_resolution.findText(max_res)
+        self._max_resolution.setCurrentIndex(idx if idx >= 0 else 0)
+
+        self._pause_tabs.setChecked(db.get_bool("ui_pause_inactive_tabs", True))
+        self._unload_tabs.setChecked(db.get_bool("ui_unload_on_leave", True))
+        self._unload_idle_min.setValue(int(db.get_int("ui_unload_idle_min", 5) or 5))
+        self._auto_pause_live.setChecked(db.get_bool("auto_pause_live_when_idle", False))

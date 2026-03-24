@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 
-CURRENT_VERSION = 18
+CURRENT_VERSION = 20
 
 
 def apply(conn):
@@ -47,6 +47,10 @@ def apply(conn):
         _migrate_v17(conn)
     if version < 18:
         _migrate_v18(conn)
+    if version < 19:
+        _migrate_v19(conn)
+    if version < 20:
+        _migrate_v20(conn)
     conn.execute(f"PRAGMA user_version = {CURRENT_VERSION}")
     conn.commit()
 
@@ -333,4 +337,38 @@ def _migrate_v18(conn):
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_ts ON clips (ts)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_camera_id ON clips (camera_id)")
+    conn.commit()
+
+
+def _migrate_v19(conn):
+    settings = [
+        ("ui_pause_inactive_tabs", "1", "bool", "Pause inactive tabs", "performance"),
+        ("ui_unload_on_leave", "1", "bool", "Unload heavy tabs on leave", "performance"),
+        ("ui_unload_idle_min", "5", "int", "Unload idle tabs after (min)", "performance"),
+        ("auto_pause_live_when_idle", "0", "bool", "Auto-stop live cameras when idle", "performance"),
+    ]
+    for key, value, vtype, label, section in settings:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+            (key, value, vtype, label, section),
+        )
+        conn.execute(
+            "UPDATE app_settings SET type=?, label=?, section=? WHERE key=? AND (type IS NULL OR type='')",
+            (vtype, label, section, key),
+        )
+    conn.commit()
+
+
+def _migrate_v20(conn):
+    settings = [
+        ("ui_pause_inactive_tabs", "bool", "Pause inactive tabs", "performance"),
+        ("ui_unload_on_leave", "bool", "Unload heavy tabs on leave", "performance"),
+        ("ui_unload_idle_min", "int", "Unload idle tabs after (min)", "performance"),
+        ("auto_pause_live_when_idle", "bool", "Auto-stop live cameras when idle", "performance"),
+    ]
+    for key, vtype, label, section in settings:
+        conn.execute(
+            "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+            (vtype, label, section, key),
+        )
     conn.commit()
