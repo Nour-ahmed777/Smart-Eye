@@ -101,6 +101,14 @@ class CameraManagerPage(QWidget):
     def on_activated(self):
         self._refresh()
 
+    def on_deactivated(self):
+        self._detail_panel.clear()
+        self._render_roster([])
+
+    def on_unload(self):
+        self._detail_panel.clear()
+        self._render_roster([])
+
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)

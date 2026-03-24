@@ -111,6 +111,18 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
     def on_activated(self):
         self._refresh()
 
+    def on_deactivated(self):
+        self._detail_panel.clear()
+        self._render_roster([])
+        with contextlib.suppress(Exception):
+            self._close_inbox_panel()
+
+    def on_unload(self):
+        self._detail_panel.clear()
+        self._render_roster([])
+        with contextlib.suppress(Exception):
+            self._close_inbox_panel()
+
     def _refresh(self):
         self._all_faces = db.get_faces()
         with contextlib.suppress(Exception):

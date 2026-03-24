@@ -209,6 +209,13 @@ class PerformanceWidget(QFrame):
         self._refresh_timer.timeout.connect(self._refresh)
         self._refresh_timer.start(1000)
 
+    def pause(self):
+        self._refresh_timer.stop()
+
+    def resume(self):
+        if not self._refresh_timer.isActive():
+            self._refresh_timer.start(1000)
+
     def _refresh(self):
         try:
             m = get_monitor()

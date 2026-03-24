@@ -13,6 +13,7 @@ from backend.repository import db
 from backend.pipeline.detector_manager import get_manager
 from backend.pipeline.inference_utils import build_state
 from backend.services.pipeline_service import PipelineService
+from backend.services.service_manager import get_service_manager
 
 _DEFAULT_INFER_INTERVAL = 3
 
@@ -199,7 +200,7 @@ class CameraThread(QThread):
                 infer_fw=infer_fw,
                 infer_fh=infer_fh,
                 enable_inbox=self._inbox_enabled,
-                enable_heatmap=True,
+                enable_heatmap=get_service_manager().is_active("heatmap_generation"),
                 inbox_context=self,
             )
             self._last_state = result

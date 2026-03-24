@@ -330,7 +330,27 @@ class DashboardPage(QWidget):
         self._refresh_timer.start(5000)
 
     def on_activated(self):
+        self._refresh_timer.start(5000)
+        self._hud_timer.start(1500)
+        if hasattr(self, "_perf_widget"):
+            with contextlib.suppress(Exception):
+                self._perf_widget.resume()
         self._refresh_stats()
+        self._sync_feeds()
+
+    def on_deactivated(self):
+        self._refresh_timer.stop()
+        self._hud_timer.stop()
+        with contextlib.suppress(Exception):
+            self._perf_widget.pause()
+        self._disconnect_all_camera_signals()
+
+    def on_unload(self):
+        self._disconnect_all_camera_signals()
+        with contextlib.suppress(Exception):
+            self._multi_feed.clear_all()
+        with contextlib.suppress(Exception):
+            self._clear_alarms()
 
     def _save_splitter(self):
         db.set_setting("dashboard_splitter_state", bytes(self._splitter.saveState().toHex()).decode())
@@ -404,6 +424,24 @@ class DashboardPage(QWidget):
         self._hud_offline.setText(f"OFFLINE: {offline}")
         self._auto_set_grid(online)
 
+    def _disconnect_all_camera_signals(self):
+        try:
+            mgr = get_camera_manager()
+            active_ids = mgr.get_active_ids()
+        except Exception:
+            active_ids = []
+        for cid in active_ids:
+            thread = None
+            with contextlib.suppress(Exception):
+                thread = mgr.get_thread(cid)
+            if not thread:
+                continue
+            with contextlib.suppress(Exception):
+                thread.frame_ready.disconnect(self._on_frame)
+            with contextlib.suppress(Exception):
+                thread.fps_updated.disconnect(self._on_fps)
+            with contextlib.suppress(Exception):
+                thread.error_occurred.disconnect(self._on_error)
     def _on_frame(self, camera_id, frame, state):
         self._multi_feed.update_frame(camera_id, frame, state)
         self._update_hud(camera_id, state)

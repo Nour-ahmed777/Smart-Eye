@@ -1,3 +1,5 @@
+import logging
+
 from PySide6.QtCore import (
     QByteArray,
     Qt,
@@ -19,7 +21,8 @@ from frontend.styles._colors import _BG_NAV_DARK
 from frontend.ui_tokens import SPACE_XXXS
 
 from frontend.services.rules_service import RulesService
-from frontend.state.page_factory import build_pages, create_page
+from frontend.state.page_factory import build_pages, create_page, get_page_specs, UnloadPolicy
+from backend.services.service_manager import get_service_manager
 from frontend.widgets.alert_popup import show_alert
 from frontend.navigation import nav_label_map
 from frontend.widgets.auth_overlay import AuthOverlay
@@ -27,6 +30,7 @@ from frontend.widgets.sidebar import SidebarWidget, LOGO_ICON_PATH
 from frontend.state.session import build_trusted_user, compute_access, pick_initial_tab
 from utils import config
 
+logger = logging.getLogger(__name__)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -47,6 +51,7 @@ class MainWindow(QMainWindow):
         self._current_theme = config.theme()
         self.setStyleSheet(get_theme(self._current_theme))
         self._rules_service = RulesService()
+        self._service_manager = get_service_manager()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -77,7 +82,10 @@ class MainWindow(QMainWindow):
                 return bool(self._db.get_setting(f"preload_{name}_page", False))
             except Exception:
                 return False
+        self._page_specs = get_page_specs(self._rules_service)
         self._pages = build_pages(_preload, self._rules_service)
+        self._page_last_active: dict[str, float] = {}
+        self._current_key: str | None = None
         if self._pages.get("settings") and hasattr(self._pages["settings"], "bind_bootstrap_cleared"):
             self._pages["settings"].bind_bootstrap_cleared(self._on_bootstrap_cleared)
 
@@ -95,6 +103,11 @@ class MainWindow(QMainWindow):
         self._alert_timer.timeout.connect(self._poll_alerts)
         self._alert_timer.start()
 
+        self._cleanup_timer = QTimer(self)
+        self._cleanup_timer.setInterval(30000)
+        self._cleanup_timer.timeout.connect(self._cleanup_idle_pages)
+        self._cleanup_timer.start()
+
         self._session_user = None
         self._allowed_tabs: set[str] = set()
         self._is_admin = False
@@ -106,14 +119,22 @@ class MainWindow(QMainWindow):
         if "dashboard" in self._pages:
             self._stack.setCurrentWidget(self._pages["dashboard"])
             self._sidebar.set_active("dashboard")
+            self._current_key = "dashboard"
+            self._mark_active("dashboard")
+            self._log_page_state("startup")
         self._sidebar.set_access(set(), False)
         if self._auth_required:
             self._require_login()
         else:
             self._enter_trusted_session()
+            if self._current_key:
+                self._acquire_services(self._current_key)
 
     def _navigate(self, key: str, allow_unauth: bool = False):
         if key not in self._pages:
+            return
+        spec = self._page_specs.get(key)
+        if spec is None:
             return
         if self._pages[key] is None:
             try:
@@ -138,13 +159,108 @@ class MainWindow(QMainWindow):
                 self._show_denied(key)
                 return
         current = self._stack.currentWidget()
-        if hasattr(current, "on_deactivated"):
-            current.on_deactivated()
+        prev_key = self._current_key
+        if prev_key and self._should_pause_inactive():
+            if hasattr(current, "on_deactivated"):
+                current.on_deactivated()
+        if prev_key:
+            self._release_services(prev_key)
         self._stack.setCurrentWidget(self._pages[key])
         self._sidebar.set_active(key)
         page = self._pages[key]
+        self._current_key = key
+        self._mark_active(key)
+        self._acquire_services(key)
         if hasattr(page, "on_activated"):
             page.on_activated()
+        if prev_key and prev_key != key:
+            self._maybe_unload_on_leave(prev_key)
+        self._log_page_state(f"navigated:{key}")
+
+    def _mark_active(self, key: str) -> None:
+        import time
+
+        self._page_last_active[key] = time.time()
+
+    def _should_pause_inactive(self) -> bool:
+        return bool(self._db.get_bool("ui_pause_inactive_tabs", True))
+
+    def _should_unload_on_leave(self) -> bool:
+        return bool(self._db.get_bool("ui_unload_on_leave", True))
+
+    def _idle_minutes(self) -> int:
+        return int(self._db.get_int("ui_unload_idle_min", 5) or 5)
+
+    def _maybe_unload_on_leave(self, key: str) -> None:
+        if not self._should_unload_on_leave():
+            return
+        spec = self._page_specs.get(key)
+        if not spec or spec.unload_policy != UnloadPolicy.DESTROY:
+            return
+        self._unload_page(key)
+
+    def _cleanup_idle_pages(self) -> None:
+        if not self._should_unload_on_leave():
+            return
+        idle_min = self._idle_minutes()
+        if idle_min <= 0:
+            return
+        import time
+
+        now = time.time()
+        for key, spec in list(self._page_specs.items()):
+            if spec.unload_policy != UnloadPolicy.IDLE:
+                continue
+            if key == self._current_key:
+                continue
+            last = self._page_last_active.get(key, 0.0)
+            if last and (now - last) >= idle_min * 60:
+                self._unload_page(key)
+
+    def _unload_page(self, key: str) -> None:
+        page = self._pages.get(key)
+        if page is None:
+            return
+        try:
+            if hasattr(page, "on_unload"):
+                page.on_unload()
+        except Exception:
+            pass
+        try:
+            self._stack.removeWidget(page)
+        except Exception:
+            pass
+        page.deleteLater()
+        self._pages[key] = None
+        self._log_page_state(f"unloaded:{key}")
+
+    def _acquire_services(self, key: str) -> None:
+        spec = self._page_specs.get(key)
+        if not spec:
+            return
+        for svc in spec.services:
+            self._service_manager.acquire(svc)
+
+    def _release_services(self, key: str) -> None:
+        spec = self._page_specs.get(key)
+        if not spec:
+            return
+        for svc in spec.services:
+            self._service_manager.release(svc)
+
+    def _log_page_state(self, reason: str) -> None:
+        try:
+            loaded = [k for k, v in self._pages.items() if v is not None]
+            unloaded = [k for k, v in self._pages.items() if v is None]
+            logger.info(
+                "Page state (%s) current=%s loaded=%s unloaded=%s",
+                reason,
+                self._current_key,
+                loaded,
+                unloaded,
+            )
+        except Exception:
+            pass
 
     def _build_auth_overlay(self):
         self._auth_overlay = AuthOverlay(self)
@@ -298,6 +414,8 @@ class MainWindow(QMainWindow):
         self._allowed_tabs = set()
         self._is_admin = False
         self._sidebar.set_account(None)
+        if self._current_key:
+            self._release_services(self._current_key)
         self._require_login()
 
     def _poll_alerts(self):

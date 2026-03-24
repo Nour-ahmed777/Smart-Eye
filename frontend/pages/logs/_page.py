@@ -483,6 +483,9 @@ class LogsViewerPage(QWidget):
         self._refresh_cameras()
         self._refresh()
 
+    def on_deactivated(self):
+        self._auto_timer.stop()
+
     def _refresh_cameras(self):
         self._camera_combo.clear()
         self._camera_combo.addItem("All cameras", None)

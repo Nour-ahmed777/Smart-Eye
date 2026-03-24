@@ -1,8 +1,6 @@
 name: Build SmartEye
 
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -87,7 +85,6 @@ jobs:
             pyqtgraph.tests
             pyqtgraph.opengl
             pyqtgraph.exporters
-            insightface.thirdparty.face3d.mesh.cython
             PySide6.QtWebEngine
             PySide6.QtWebEngineWidgets
             PySide6.QtWebEngineCore
@@ -134,7 +131,6 @@ jobs:
             qt6spatialaudio.dll
             Cython/*
             skimage/data/*
-            insightface/thirdparty/*
             pyqtgraph/examples/*
           assume-yes-for-downloads: true
 

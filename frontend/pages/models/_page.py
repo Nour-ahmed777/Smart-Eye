@@ -1082,3 +1082,11 @@ class ModelsPage(QWidget):
         self._fm_load_model_status()
         self._refresh_plugin_list()
         self._refresh_submodels()
+
+    def on_deactivated(self) -> None:
+        if self._fm_reload_timer:
+            self._fm_reload_timer.stop()
+
+    def on_unload(self) -> None:
+        if self._fm_reload_timer:
+            self._fm_reload_timer.stop()
