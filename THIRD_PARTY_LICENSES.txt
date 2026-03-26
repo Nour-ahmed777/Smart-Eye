@@ -22,8 +22,6 @@ License: LGPL v3
 Part of the PySide6 project
 https://www.qt.io/
 
-Note: Users are allowed to replace the PySide6 libraries (DLLs) in the installation to comply with LGPL.
-
 --------------------------------------------------
 
 OpenCV (opencv-python, opencv-python-headless)
