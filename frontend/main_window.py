@@ -1,8 +1,7 @@
-import logging
+﻿import logging
 
 from PySide6.QtCore import (
     QByteArray,
-    Qt,
     QTimer,
 )
 from PySide6.QtGui import QIcon
@@ -80,7 +79,7 @@ class MainWindow(QMainWindow):
         def _preload(name: str) -> bool:
             try:
                 return bool(self._db.get_setting(f"preload_{name}_page", False))
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 return False
         self._page_specs = get_page_specs(self._rules_service)
         self._pages = build_pages(_preload, self._rules_service)
@@ -96,7 +95,7 @@ class MainWindow(QMainWindow):
         try:
             row = self._db.get_conn().execute("SELECT IFNULL(MAX(id),0) FROM detection_logs").fetchone()
             self._alert_last_id = int(row[0]) if row else 0
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             self._alert_last_id = 0
         self._alert_timer = QTimer(self)
         self._alert_timer.setInterval(2000)
@@ -143,7 +142,7 @@ class MainWindow(QMainWindow):
                     return
                 self._pages[key] = page
                 self._stack.addWidget(page)
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 import traceback
 
                 traceback.print_exc()
@@ -224,11 +223,11 @@ class MainWindow(QMainWindow):
         try:
             if hasattr(page, "on_unload"):
                 page.on_unload()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         try:
             self._stack.removeWidget(page)
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         page.deleteLater()
         self._pages[key] = None
@@ -259,7 +258,7 @@ class MainWindow(QMainWindow):
                 loaded,
                 unloaded,
             )
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
 
     def _build_auth_overlay(self):
@@ -291,7 +290,7 @@ class MainWindow(QMainWindow):
     def _refresh_auth_hint(self):
         try:
             accounts = self._db.get_accounts()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             accounts = []
         if self._db.get_bool("bootstrap_password_active", False):
             token = self._db.get_setting("bootstrap_token", "")
@@ -350,7 +349,7 @@ class MainWindow(QMainWindow):
             return
         try:
             self._db.touch_last_login(account["id"])
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         self._on_login_success(account)
 
@@ -438,13 +437,13 @@ class MainWindow(QMainWindow):
             if rules:
                 subtitle += f" - {rules}"
             show_alert(self, "Alert triggered!", subtitle)
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
 
     def _apply_blur(self, enabled: bool):
         try:
             cw = self.centralWidget()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             return
         if enabled:
             blur = QGraphicsBlurEffect()
@@ -503,3 +502,4 @@ class MainWindow(QMainWindow):
 
         _db.set_setting("window_geometry", bytes(self.saveGeometry().toHex()).decode())
         super().closeEvent(event)
+
