@@ -7,7 +7,6 @@ from frontend.styles._colors import _BG_RAISED, _BORDER, _TEXT_MUTED, _TEXT_PRI,
 from frontend.ui_tokens import (
     FONT_SIZE_LABEL,
     FONT_SIZE_SUBHEAD,
-    FONT_WEIGHT_BOLD,
     RADIUS_LG,
     SIZE_ICON_64,
     SIZE_HERO_HEADER,
