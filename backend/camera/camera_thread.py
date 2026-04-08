@@ -213,7 +213,7 @@ class CameraThread(QThread):
                             obj_types = [
                                 k
                                 for k, v in det.items()
-                                if k != "identity" and v not in (False, 0, "unknown", None, "none")
+                                if k not in ("identity", "gender") and v not in (False, 0, "unknown", None, "none")
                             ]
                             db.add_clip(
                                 clip_path,

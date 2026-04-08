@@ -15,14 +15,66 @@ from utils.embedding_utils import bytes_to_embedding
 _logger = logging.getLogger(__name__)
 
 AVAILABLE_MODELS = {
-    "buffalo_l": "buffalo_l  — Large (most accurate, recommended)",
-    "buffalo_m": "buffalo_m  — Medium (balanced)",
-    "buffalo_s": "buffalo_s  — Small (faster, less accurate)",
-    "buffalo_sc": "buffalo_sc — Small + shape (fast)",
-    "antelopev2": "antelopev2 — Highest accuracy (large)",
+    "buffalo_l": "buffalo_l  - Large (most accurate, recommended)",
+    "buffalo_m": "buffalo_m  - Medium (balanced)",
+    "buffalo_s": "buffalo_s  - Small (faster, less accurate)",
+    "buffalo_sc": "buffalo_sc - Small + shape (fast)",
+    "antelopev2": "antelopev2 - Highest accuracy (large)",
 }
 
-ALLOWED_MODULES = ["detection", "recognition"]
+ALLOWED_MODULES = ["detection", "recognition", "genderage"]
+
+
+def normalize_gender(value) -> str:
+    if value is None:
+        return "unknown"
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "unknown"
+        value = value[0]
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return "unknown"
+        if value.size >= 2:
+            # Typical genderage vector: [female_score, male_score].
+            try:
+                female_score = float(value.flat[0])
+                male_score = float(value.flat[1])
+                return "male" if male_score >= female_score else "female"
+            except Exception:
+                value = float(value.flat[0])
+        else:
+            value = float(value.flat[0])
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        return "male" if float(value) >= 0.5 else "female"
+    text = str(value).strip().lower()
+    if text in ("male", "m", "man", "boy", "1"):
+        return "male"
+    if text in ("female", "f", "woman", "girl", "0"):
+        return "female"
+    return "unknown"
+
+
+def _extract_gender_info(face_obj) -> tuple[str, float]:
+    try:
+        raw_gender = getattr(face_obj, "gender", None)
+    except Exception:
+        raw_gender = None
+    gender = normalize_gender(raw_gender)
+    if gender == "unknown":
+        return gender, 0.0
+    if isinstance(raw_gender, (int, float, np.integer, np.floating)):
+        conf = min(1.0, max(0.0, abs(float(raw_gender) - 0.5) * 2.0))
+        return gender, conf
+    if isinstance(raw_gender, np.ndarray) and raw_gender.size >= 2:
+        try:
+            female_score = float(raw_gender.flat[0])
+            male_score = float(raw_gender.flat[1])
+            conf = min(1.0, max(0.0, abs(male_score - female_score)))
+            return gender, conf
+        except Exception:
+            pass
+    return gender, 1.0
 
 
 def get_allowed_modules() -> list[str]:
@@ -33,6 +85,14 @@ def get_allowed_modules() -> list[str]:
         if raw:
             mods = _json.loads(raw) if isinstance(raw, str) else raw
             if isinstance(mods, list) and mods:
+                # One-time migration: pre-gender configs may lack genderage.
+                migrated = db.get_bool("insightface_allowed_modules_genderage_migrated", False)
+                if not migrated and "genderage" not in mods:
+                    mods = list(mods) + ["genderage"]
+                    with contextlib.suppress(Exception):
+                        db.set_setting("insightface_allowed_modules", _json.dumps(mods))
+                    with contextlib.suppress(Exception):
+                        db.set_setting("insightface_allowed_modules_genderage_migrated", "1")
                 return mods
     except Exception:
         pass
@@ -55,10 +115,10 @@ _cached_providers: list[str] | None = None
 def _get_model_name() -> str:
     global _cached_model_name
     if _cached_model_name is not None:
-        _logger.info("✓ Cache HIT: model_name=%s", _cached_model_name)
+        _logger.info(" Cache HIT: model_name=%s", _cached_model_name)
         return _cached_model_name
 
-    _logger.info("✗ Cache MISS: Loading model_name from database")
+    _logger.info(" Cache MISS: Loading model_name from database")
     try:
         name = db.get_setting("insightface_model_name", "buffalo_l") or "buffalo_l"
         _cached_model_name = name if name in AVAILABLE_MODELS else "buffalo_l"
@@ -71,10 +131,10 @@ def _get_model_name() -> str:
 def _detect_providers() -> list[str]:
     global _cached_providers
     if _cached_providers is not None:
-        _logger.info("✓ Cache HIT: providers=%s", _cached_providers)
+        _logger.info(" Cache HIT: providers=%s", _cached_providers)
         return _cached_providers
 
-    _logger.info("✗ Cache MISS: Detecting providers")
+    _logger.info(" Cache MISS: Detecting providers")
     try:
         import onnxruntime as ort
 
@@ -152,6 +212,7 @@ class FaceModel:
         self._known_matrix: np.ndarray | None = None
         self._known_rows: list[dict] = []
         self._known_cache_dirty: bool = True
+        self._gender_diag_logged: bool = False
 
     def load(self, model_dir: str = "") -> None:
         with self._load_lock:
@@ -383,19 +444,28 @@ class FaceModel:
             _logger.warning("detect_faces: inference error", exc_info=True)
             return []
         results = []
+        gender_enabled = db.get_bool("gender_inference_enabled", True)
         for f in faces:
             try:
                 bbox = [int(b) for b in f.bbox]
                 emb = self._normalize_embedding(f.embedding if hasattr(f, "embedding") else None)
+                gender, gender_conf = _extract_gender_info(f) if gender_enabled else ("unknown", 0.0)
                 results.append(
                     {
                         "bbox": bbox,
                         "embedding": emb,
                         "det_score": float(f.det_score),
+                        "gender": gender,
+                        "gender_confidence": float(gender_conf),
                     }
                 )
             except Exception:
                 continue
+        if gender_enabled and faces and not self._gender_diag_logged:
+            with contextlib.suppress(Exception):
+                sample_gender = getattr(faces[0], "gender", None)
+                _logger.info("Gender sample output: type=%s value=%r", type(sample_gender).__name__, sample_gender)
+            self._gender_diag_logged = True
         return results
 
     def get_embedding(self, frame):
@@ -435,3 +505,6 @@ class FaceModel:
 
     def check_liveness(self, frame, _face_info: dict) -> float:
         return 1.0
+
+
+

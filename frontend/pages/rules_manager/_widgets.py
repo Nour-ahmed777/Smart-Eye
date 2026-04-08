@@ -389,6 +389,25 @@ class _ObjectClassPicker(QWidget):
         return data if data else self._combo.currentText().strip()
 
 
+class _GenderPicker(QWidget):
+    def __init__(self, initial_value: str = "", parent=None):
+        super().__init__(parent)
+        self.setStyleSheet("background:transparent;")
+        h = QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0)
+        self._combo = QComboBox()
+        self._combo.setStyleSheet(_combo_ss())
+        for value in ("male", "female", "unknown"):
+            self._combo.addItem(value.title(), value)
+        h.addWidget(self._combo, stretch=1)
+        idx = self._combo.findData((initial_value or "").strip().lower())
+        if idx >= 0:
+            self._combo.setCurrentIndex(idx)
+
+    def get_value(self) -> str:
+        return str(self._combo.currentData() or "unknown")
+
+
 class ConditionRow(QFrame):
     remove_requested = Signal(object)
 
@@ -439,6 +458,8 @@ class ConditionRow(QFrame):
 
         self._val_object = _ObjectClassPicker(value)
         self._val_stack.addWidget(self._val_object)
+        self._val_gender = _GenderPicker(value)
+        self._val_stack.addWidget(self._val_gender)
 
         self._attr.currentTextChanged.connect(self._on_attr_changed)
         from PySide6.QtCore import QTimer
@@ -464,6 +485,8 @@ class ConditionRow(QFrame):
     def _on_attr_changed(self, attr: str):
         if attr == "identity":
             self._val_stack.setCurrentIndex(1)
+        elif attr == "gender":
+            self._val_stack.setCurrentIndex(3)
         elif attr in ("object", "objects"):
             self._val_stack.setCurrentIndex(2)
         else:
@@ -473,6 +496,8 @@ class ConditionRow(QFrame):
         attr = self._attr.currentText()
         if attr == "identity":
             val = self._val_identity.get_value()
+        elif attr == "gender":
+            val = self._val_gender.get_value()
         elif attr in ("object", "objects"):
             val = self._val_object.get_value()
         else:

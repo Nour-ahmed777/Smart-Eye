@@ -166,7 +166,7 @@ _DEL_CONFIRM_SS = _TEXT_BTN_RED_CONFIRM
 
 
 def _get_attributes():
-    return ["identity", "object", "objects"]
+    return ["identity", "gender", "object", "objects"]
 
 
 def _input_ss(radius: int = RADIUS_MD) -> str:

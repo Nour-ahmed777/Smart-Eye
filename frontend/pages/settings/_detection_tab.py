@@ -69,6 +69,15 @@ class DetectionTab(QWidget):
             )
         )
 
+        self._gender_toggle = ToggleSwitch()
+        bl.addWidget(
+            _srow(
+                "Gender inference",
+                self._gender_toggle,
+                hint="Enable gender estimation (male/female/unknown) for rules, analytics, and overlays.",
+            )
+        )
+
         self._min_face_size = QSpinBox()
         self._min_face_size.setRange(10, 500)
         self._min_face_size.setValue(40)
@@ -107,6 +116,7 @@ class DetectionTab(QWidget):
 
     def _save(self) -> None:
         db.set_setting("liveness_enabled", "1" if self._liveness_toggle.isChecked() else "0")
+        db.set_setting("gender_inference_enabled", "1" if self._gender_toggle.isChecked() else "0")
         db.set_setting("min_face_size", str(self._min_face_size.value()))
         if db.get_bool("ui_show_save_popups", False):
             from PySide6.QtWidgets import QMessageBox
@@ -136,4 +146,5 @@ class DetectionTab(QWidget):
 
     def load(self) -> None:
         self._liveness_toggle.setChecked(db.get_bool("liveness_enabled", False))
+        self._gender_toggle.setChecked(db.get_bool("gender_inference_enabled", True))
         self._min_face_size.setValue(int(db.get_setting("min_face_size", "40")))

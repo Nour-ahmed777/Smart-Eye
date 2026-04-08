@@ -42,6 +42,11 @@ jobs:
 
           python -c "import insightface, sys; print('Python prefix:', sys.prefix); print('insightface module:', insightface.__file__)"
 
+      - name: Ensure setuptools is installed for Nuitka
+        run: |
+          pip install --upgrade setuptools
+          pip show setuptools
+
       - name: Check for model bundle
         id: check_models
         shell: pwsh

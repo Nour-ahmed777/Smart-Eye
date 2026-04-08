@@ -59,11 +59,13 @@ class ConditionRow(QWidget):
     def _on_attr_changed(self):
         attr = self.attr_combo.currentText()
 
-        if attr in ("object", "objects", "identity"):
+        if attr in ("object", "objects", "identity", "gender"):
             vals = list(self._value_choices.get(attr, []))
             combo = QComboBox()
             combo.setMinimumWidth(SIZE_FIELD_W_SM)
             combo.addItem("")
+            if attr == "gender" and not vals:
+                vals = ["male", "female", "unknown"]
             combo.addItems(vals)
 
             self._replace_value_widget(combo)

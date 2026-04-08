@@ -1,4 +1,5 @@
 from backend.repository import db
+from backend.models.face_model import normalize_gender
 import threading
 import time
 
@@ -56,7 +57,9 @@ def invalidate_cache():
 def merge_results(detection_results, camera_id, zone_info=None):
     state = {
         "identity": None,
+        "gender": "unknown",
         "face_confidence": 0.0,
+        "gender_confidence": 0.0,
         "liveness": 1.0,
         "zone": None,
         "zone_id": None,
@@ -72,7 +75,9 @@ def merge_results(detection_results, camera_id, zone_info=None):
         {
             "bbox": f["bbox"],
             "identity": f["identity"]["name"] if f.get("identity") else None,
+            "gender": normalize_gender(f.get("gender")),
             "confidence": f.get("confidence", 0.0),
+            "gender_confidence": f.get("gender_confidence", 0.0),
             "liveness": f.get("liveness", 1.0),
         }
         for f in faces
@@ -86,7 +91,9 @@ def merge_results(detection_results, camera_id, zone_info=None):
             {
                 "bbox": gf["bbox"],
                 "identity": _gi["name"] if isinstance(_gi, dict) else _gi,
+                "gender": normalize_gender(gf.get("gender")),
                 "confidence": gf.get("confidence", 0.0),
+                "gender_confidence": gf.get("gender_confidence", 0.0),
                 "liveness": gf.get("liveness", 1.0),
                 "ghost": True,
             }
@@ -98,6 +105,8 @@ def merge_results(detection_results, camera_id, zone_info=None):
             state["face_id"] = best_face["identity"]["id"]
             state["face_confidence"] = best_face["confidence"]
         state["liveness"] = best_face.get("liveness", 1.0)
+        state["gender"] = normalize_gender(best_face.get("gender"))
+        state["gender_confidence"] = float(best_face.get("gender_confidence", 0.0) or 0.0)
         state["face_bbox"] = best_face["bbox"]
 
     if zone_info:
@@ -149,6 +158,7 @@ def merge_results(detection_results, camera_id, zone_info=None):
         state["detections"]["identity"] = state["identity"]
     else:
         state["detections"]["identity"] = "unknown"
+    state["detections"]["gender"] = normalize_gender(state.get("gender"))
 
     state["face_time_ms"] = detection_results.get("face_time_ms", 0)
     state["object_time_ms"] = detection_results.get("object_time_ms", 0)

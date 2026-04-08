@@ -164,6 +164,16 @@ class AnalyticsPage(QWidget):
         self._alarm_combo.setStyleSheet(_FORM_COMBO)
         fl.addWidget(self._alarm_combo)
 
+        self._gender_combo = QComboBox()
+        self._gender_combo.addItem("All Genders", None)
+        self._gender_combo.addItem("Male", "male")
+        self._gender_combo.addItem("Female", "female")
+        self._gender_combo.addItem("Unknown", "unknown")
+        self._gender_combo.setFixedHeight(SIZE_CONTROL_MD)
+        self._gender_combo.setMinimumWidth(SIZE_FIELD_W_LG)
+        self._gender_combo.setStyleSheet(_FORM_COMBO)
+        fl.addWidget(self._gender_combo)
+
         self._time_combo = QComboBox()
         self._time_combo.addItem("Local", "Local")
         self._time_combo.addItem("UTC", "UTC")
@@ -256,10 +266,12 @@ class AnalyticsPage(QWidget):
         self._stat_violations = StatCardWidget("Violations", "0", "total", _DANGER_DIM)
         self._stat_compliance = StatCardWidget("Compliance", "100%", "rate", _SUCCESS_DIM)
         self._stat_faces = StatCardWidget("Identified", "0", "faces", _PURPLE_DIM)
+        self._stat_gendered = StatCardWidget("Gendered Faces", "0", "gender", _ACCENT)
         stats_row.addWidget(self._stat_total)
         stats_row.addWidget(self._stat_violations)
         stats_row.addWidget(self._stat_compliance)
         stats_row.addWidget(self._stat_faces)
+        stats_row.addWidget(self._stat_gendered)
         layout.addLayout(stats_row)
 
         tab_card = QWidget()
@@ -356,6 +368,9 @@ class AnalyticsPage(QWidget):
         self._top_violators_area = QScrollArea()
         self._top_violators_area.setWidgetResizable(True)
         self._top_violators_area.setStyleSheet("border: none; background: transparent;")
+        self._gender_breakdown_lbl = QLabel("")
+        self._gender_breakdown_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_LABEL) + " background: transparent;")
+        tv_layout.addWidget(self._gender_breakdown_lbl)
         self._tv_container = QWidget()
         self._tv_container.setStyleSheet(transparent_surface_style())
         self._tv_layout = QVBoxLayout(self._tv_container)
@@ -441,7 +456,8 @@ class AnalyticsPage(QWidget):
         camera_id = self._camera_combo.currentData()
         rule_name = self._rule_combo.currentData()
         min_alarm_level = self._alarm_combo.currentData()
-        summary = stats_engine.get_summary(date_from, date_to, camera_id, min_alarm_level=min_alarm_level)
+        gender = self._gender_combo.currentData()
+        summary = stats_engine.get_summary(date_from, date_to, camera_id, min_alarm_level=min_alarm_level, gender=gender)
         total = summary.get("total_detections", 0) or 0
         violations = summary.get("violations", 0) or 0
         compliant = total - violations
@@ -452,14 +468,28 @@ class AnalyticsPage(QWidget):
             camera_id=camera_id,
             rule_name=rule_name,
             min_alarm_level=min_alarm_level,
+            gender=gender,
         )
         self._stat_total.set_value(str(total))
         self._stat_violations.set_value(str(violations))
         self._stat_compliance.set_value(f"{rate:.0f}%")
         self._stat_faces.set_value(str(identified))
+        gender_rows = stats_engine.get_gender_violations(
+            date_from=date_from,
+            date_to=date_to,
+            camera_id=camera_id,
+            rule_name=rule_name,
+            min_alarm_level=min_alarm_level,
+            gender=gender,
+        )
+        gender_counts = {row.get("gender", "unknown"): int(row.get("count", 0) or 0) for row in gender_rows}
+        self._stat_gendered.set_value(str(gender_counts.get("male", 0) + gender_counts.get("female", 0)))
+        self._gender_breakdown_lbl.setText(
+            f"Gender split: Male {gender_counts.get('male', 0)} | Female {gender_counts.get('female', 0)} | Unknown {gender_counts.get('unknown', 0)}"
+        )
         self._compliance_chart.clear_data()
         trend = stats_engine.get_compliance_trend(
-            rule_name=rule_name, date_from=date_from, date_to=date_to, camera_id=camera_id, time_basis=_basis
+            rule_name=rule_name, date_from=date_from, date_to=date_to, camera_id=camera_id, time_basis=_basis, gender=gender
         )
         if trend:
             x_idx = list(range(len(trend)))
@@ -471,7 +501,13 @@ class AnalyticsPage(QWidget):
 
         self._violation_chart.clear_data()
         hourly = stats_engine.get_hourly_violation_chart(
-            date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level, time_basis=_basis
+            date_from,
+            date_to,
+            camera_id=camera_id,
+            rule_name=rule_name,
+            min_alarm_level=min_alarm_level,
+            time_basis=_basis,
+            gender=gender,
         )
         if hourly:
             x_idx = list(range(len(hourly)))
@@ -505,7 +541,7 @@ class AnalyticsPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
         top = stats_engine.get_person_violations(
-            date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level, limit=10
+            date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level, limit=10, gender=gender
         )
         if not top:
             empty_lbl = QLabel("No violators in this range.")
@@ -531,6 +567,9 @@ class AnalyticsPage(QWidget):
             rank_label = QLabel(f"Rank #{rank}")
             rank_label.setStyleSheet(muted_label_style())
             info_col.addWidget(rank_label)
+            gender_label = QLabel(f"Gender: {(person.get('gender') or 'unknown').title()}")
+            gender_label.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION))
+            info_col.addWidget(gender_label)
 
             count = int(person.get("count", 0) or 0)
             count_pill = QLabel(f"{count} violations")
@@ -566,6 +605,7 @@ class AnalyticsPage(QWidget):
         camera_id = self._camera_combo.currentData()
         rule_name = self._rule_combo.currentData()
         min_alarm_level = self._alarm_combo.currentData()
+        gender = self._gender_combo.currentData()
         try:
             report_generator.generate_report(
                 path,
@@ -575,6 +615,7 @@ class AnalyticsPage(QWidget):
                 rule_name=rule_name,
                 min_alarm_level=min_alarm_level,
                 time_basis=basis,
+                gender=gender,
             )
             QMessageBox.information(self, "PDF Exported", f"Report saved to {path}")
         except (OSError, ValueError, RuntimeError) as e:

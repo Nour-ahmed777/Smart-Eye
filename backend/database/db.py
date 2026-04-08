@@ -1024,8 +1024,33 @@ def add_access_log(face_id, camera_id, decision, reason=""):
     return cur.lastrowid
 
 
+def _normalize_gender_value(value) -> str:
+    if value is None:
+        return "unknown"
+    text = str(value).strip().lower()
+    if text in ("male", "m", "man", "boy", "1"):
+        return "male"
+    if text in ("female", "f", "woman", "girl", "0"):
+        return "female"
+    return "unknown"
+
+
+def _normalize_detections_payload(payload):
+    data = payload
+    if isinstance(payload, str):
+        try:
+            data = json.loads(payload)
+        except Exception:
+            data = {}
+    if not isinstance(data, dict):
+        data = {}
+    data = dict(data)
+    data["gender"] = _normalize_gender_value(data.get("gender"))
+    return data
+
+
 def add_detection_log(camera_id, zone_id, identity, face_confidence, detections, rules_triggered, alarm_level, snapshot_path=""):
-    det_json = json.dumps(detections) if isinstance(detections, dict) else detections
+    det_json = json.dumps(_normalize_detections_payload(detections)) if isinstance(detections, dict) else detections
     rules_json = json.dumps(rules_triggered) if isinstance(rules_triggered, list) else rules_triggered
     cur = _write_execute(
         "INSERT INTO detection_logs (camera_id, zone_id, identity, face_confidence, detections, rules_triggered, alarm_level, snapshot_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1052,8 +1077,10 @@ def get_detection_logs(
         q += " AND dl.timestamp<=?"
         params.append(date_to)
     if identity:
-        q += " AND dl.identity LIKE ?"
-        params.append(f"%{identity}%")
+        q += " AND (dl.identity LIKE ? OR dl.detections LIKE ?)"
+        like = f"%{identity}%"
+        params.append(like)
+        params.append(like)
     if rule_name:
         q += " AND dl.rules_triggered LIKE ?"
         params.append(f"%{rule_name}%")
@@ -1065,7 +1092,10 @@ def get_detection_logs(
         params.append(reviewed)
     q += " ORDER BY dl.timestamp DESC LIMIT ?"
     params.append(limit)
-    return [dict(r) for r in _conn.execute(q, params).fetchall()]
+    rows = [dict(r) for r in _conn.execute(q, params).fetchall()]
+    for row in rows:
+        row["detections"] = json.dumps(_normalize_detections_payload(row.get("detections")))
+    return rows
 
 
 def add_notification_profile(name, ntype, endpoint, auth_token=""):
@@ -1297,7 +1327,7 @@ def backup(dest_path):
     _write_call(_op)
 
 
-def get_detection_stats(date_from=None, date_to=None, camera_id=None, min_alarm_level=None):
+def get_detection_stats(date_from=None, date_to=None, camera_id=None, min_alarm_level=None, gender=None):
     q = "SELECT COUNT(*) as total, SUM(CASE WHEN alarm_level>0 THEN 1 ELSE 0 END) as violations FROM detection_logs WHERE 1=1"
     params = []
     if date_from:
@@ -1312,11 +1342,16 @@ def get_detection_stats(date_from=None, date_to=None, camera_id=None, min_alarm_
     if min_alarm_level is not None:
         q += " AND alarm_level>=?"
         params.append(int(min_alarm_level))
+    if gender:
+        q += " AND detections LIKE ?"
+        params.append(f'%\"gender\": \"{_normalize_gender_value(gender)}\"%')
     row = _conn.execute(q, params).fetchone()
     return dict(row)
 
 
-def get_hourly_violations(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, time_basis=None):
+def get_hourly_violations(
+    date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, time_basis=None, gender=None
+):
     if time_basis == "Local":
         q = "SELECT strftime('%H', timestamp, 'localtime') as hour, COUNT(*) as count FROM detection_logs WHERE 1=1"
     else:
@@ -1339,12 +1374,17 @@ def get_hourly_violations(date_from=None, date_to=None, camera_id=None, rule_nam
     if rule_name:
         q += " AND rules_triggered LIKE ?"
         params.append(f"%{rule_name}%")
+    if gender:
+        q += " AND detections LIKE ?"
+        params.append(f'%\"gender\": \"{_normalize_gender_value(gender)}\"%')
     q += " GROUP BY hour ORDER BY hour"
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
-def get_violations_by_person(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, limit=20):
-    q = """SELECT identity, COUNT(*) as count
+def get_violations_by_person(
+    date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, limit=20, gender=None
+):
+    q = """SELECT identity, detections
            FROM detection_logs
            WHERE identity IS NOT NULL AND identity != ''"""
     params = []
@@ -1365,9 +1405,58 @@ def get_violations_by_person(date_from=None, date_to=None, camera_id=None, rule_
     if rule_name:
         q += " AND rules_triggered LIKE ?"
         params.append(f"%{rule_name}%")
-    q += " GROUP BY identity ORDER BY count DESC LIMIT ?"
-    params.append(limit)
-    return [dict(r) for r in _conn.execute(q, params).fetchall()]
+    if gender:
+        q += " AND detections LIKE ?"
+        params.append(f'%\"gender\": \"{_normalize_gender_value(gender)}\"%')
+    rows = [dict(r) for r in _conn.execute(q, params).fetchall()]
+    agg = {}
+    for row in rows:
+        identity = row.get("identity") or ""
+        if not identity:
+            continue
+        det = _normalize_detections_payload(row.get("detections"))
+        entry = agg.setdefault(identity, {"identity": identity, "count": 0, "gender": "unknown"})
+        entry["count"] += 1
+        g = _normalize_gender_value(det.get("gender"))
+        if entry["gender"] == "unknown" and g != "unknown":
+            entry["gender"] = g
+    result = sorted(agg.values(), key=lambda x: x["count"], reverse=True)
+    return result[: max(1, int(limit or 20))]
+
+
+def get_violations_by_gender(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, gender=None):
+    q = "SELECT detections FROM detection_logs WHERE 1=1"
+    params = []
+    if min_alarm_level is not None:
+        q += " AND alarm_level>=?"
+        params.append(int(min_alarm_level))
+    else:
+        q += " AND alarm_level>0"
+    if date_from:
+        q += " AND timestamp>=?"
+        params.append(date_from)
+    if date_to:
+        q += " AND timestamp<=?"
+        params.append(date_to)
+    if camera_id:
+        q += " AND camera_id=?"
+        params.append(camera_id)
+    if rule_name:
+        q += " AND rules_triggered LIKE ?"
+        params.append(f"%{rule_name}%")
+    if gender:
+        q += " AND detections LIKE ?"
+        params.append(f'%\"gender\": \"{_normalize_gender_value(gender)}\"%')
+
+    counts = {"male": 0, "female": 0, "unknown": 0}
+    for row in _conn.execute(q, params).fetchall():
+        g = _normalize_gender_value(_normalize_detections_payload(row["detections"]).get("gender"))
+        counts[g] = counts.get(g, 0) + 1
+    return [
+        {"gender": "male", "count": counts["male"]},
+        {"gender": "female", "count": counts["female"]},
+        {"gender": "unknown", "count": counts["unknown"]},
+    ]
 
 
 def get_camera_activity(date_from=None, date_to=None, camera_id=None):
@@ -1391,7 +1480,7 @@ def get_camera_activity(date_from=None, date_to=None, camera_id=None):
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
-def get_compliance_over_time(rule_name=None, date_from=None, date_to=None, camera_id=None, time_basis=None):
+def get_compliance_over_time(rule_name=None, date_from=None, date_to=None, camera_id=None, time_basis=None, gender=None):
     if time_basis == "Local":
         date_expr = "DATE(timestamp, 'localtime')"
     else:
@@ -1413,11 +1502,14 @@ def get_compliance_over_time(rule_name=None, date_from=None, date_to=None, camer
     if camera_id:
         q += " AND camera_id=?"
         params.append(camera_id)
+    if gender:
+        q += " AND detections LIKE ?"
+        params.append(f'%\"gender\": \"{_normalize_gender_value(gender)}\"%')
     q += " GROUP BY day ORDER BY day"
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
-def get_identified_count(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None):
+def get_identified_count(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, gender=None):
     q = """SELECT COUNT(DISTINCT identity) as count
            FROM detection_logs
            WHERE identity IS NOT NULL AND identity != '' AND identity != 'Unknown'"""
@@ -1437,6 +1529,9 @@ def get_identified_count(date_from=None, date_to=None, camera_id=None, rule_name
     if camera_id:
         q += " AND camera_id=?"
         params.append(camera_id)
+    if gender:
+        q += " AND detections LIKE ?"
+        params.append(f'%\"gender\": \"{_normalize_gender_value(gender)}\"%')
     row = _conn.execute(q, params).fetchone()
     return dict(row) if row else {"count": 0}
 

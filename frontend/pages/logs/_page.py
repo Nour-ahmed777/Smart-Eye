@@ -266,7 +266,7 @@ class LogsViewerPage(QWidget):
         fl1.addSpacing(SPACE_14)
 
         self._search_edit = QLineEdit()
-        self._search_edit.setPlaceholderText("Search identity or class…")
+        self._search_edit.setPlaceholderText("Search identity, class, or gender...")
         self._search_edit.setFixedHeight(SIZE_CONTROL_MD)
         self._search_edit.setStyleSheet(_FORM_INPUTS)
         self._search_edit.returnPressed.connect(self._refresh)
@@ -377,14 +377,14 @@ class LogsViewerPage(QWidget):
         self._table = QTableWidget()
         self._table.viewport().setAutoFillBackground(False)
         self._table.viewport().setStyleSheet("background: transparent;")
-        self._table.setColumnCount(6)
-        self._table.setHorizontalHeaderLabels(["Time", "Camera", "Identity", "Type", "Violation", "Snapshot"])
+        self._table.setColumnCount(7)
+        self._table.setHorizontalHeaderLabels(["Time", "Camera", "Identity", "Gender", "Type", "Violation", "Snapshot"])
         hdr = self._table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(4, 100)
         hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(5, 240)
+        self._table.setColumnWidth(5, 100)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(6, 240)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table.verticalHeader().setVisible(False)
@@ -501,21 +501,26 @@ class LogsViewerPage(QWidget):
 
             cam = db.get_camera(log.get("camera_id"))
             self._table.setItem(i, 1, self._cell(cam["name"] if cam else str(log.get("camera_id", ""))))
-            self._table.setItem(i, 2, self._cell(log.get("identity", "—")))
-            self._table.setItem(i, 3, self._cell("detection"))
+            self._table.setItem(i, 2, self._cell(log.get("identity", "-")))
+            detections = {}
+            with contextlib.suppress(Exception):
+                detections = json.loads(log.get("detections", "{}"))
+            gender = str((detections or {}).get("gender") or "unknown").title()
+            self._table.setItem(i, 3, self._cell(gender))
+            self._table.setItem(i, 4, self._cell("detection"))
 
             is_violation = (log.get("alarm_level", 0) or 0) > 0
             viol_item = QTableWidgetItem("● YES" if is_violation else "NO")
             viol_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             viol_item.setForeground(QColor(_DANGER if is_violation else _TEXT_MUTED))
-            self._table.setItem(i, 4, viol_item)
+            self._table.setItem(i, 5, viol_item)
 
             snap = log.get("snapshot_path", "") or ""
-            snap_display = os.path.basename(snap) if snap else "—"
+            snap_display = os.path.basename(snap) if snap else "-"
             snap_item = self._cell(snap_display)
             if snap:
                 snap_item.setToolTip(snap)
-            self._table.setItem(i, 5, snap_item)
+            self._table.setItem(i, 6, snap_item)
 
         self._count_label.setText(f"{len(logs)} log{'s' if len(logs) != 1 else ''}")
 

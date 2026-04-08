@@ -324,6 +324,8 @@ class DetectorManager:
                     "confidence": None,
                     "embedding": face.get("embedding"),
                     "liveness": None,
+                    "gender": face.get("gender", "unknown"),
+                    "gender_confidence": face.get("gender_confidence", 0.0),
                 }
             )
         return results, (time.time() - t0) * 1000
@@ -456,6 +458,8 @@ class DetectorManager:
                 f["confidence"] = best.get("confidence")
                 f["embedding"] = f.get("embedding") or best.get("embedding")
                 f["liveness"] = best.get("liveness", 1.0)
+                f["gender"] = f.get("gender") or best.get("gender", "unknown")
+                f["gender_confidence"] = max(float(f.get("gender_confidence", 0.0)), float(best.get("gender_confidence", 0.0)))
                 continue
 
             if aggressive_mode and identifies_used >= max_identify:
@@ -534,6 +538,8 @@ class DetectorManager:
                     "det_score": f.get("det_score"),
                     "embedding": f.get("embedding"),
                     "liveness": f.get("liveness", 1.0),
+                    "gender": f.get("gender", "unknown"),
+                    "gender_confidence": f.get("gender_confidence", 0.0),
                     "last_seen": time.time(),
                 }
             )
@@ -645,6 +651,8 @@ class DetectorManager:
                             "_confidence": None,
                             "_liveness": 1.0,
                             "_det_score": 0.0,
+                            "_gender": "unknown",
+                            "_gender_conf": 0.0,
                         }
                     )
                     continue
@@ -715,6 +723,8 @@ class DetectorManager:
                         "_confidence": f.get("confidence"),
                         "_liveness": f.get("liveness", 1.0),
                         "_det_score": f.get("det_score", 0.0),
+                        "_gender": f.get("gender", "unknown"),
+                        "_gender_conf": f.get("gender_confidence", 0.0),
                     }
                 )
 
@@ -755,6 +765,8 @@ class DetectorManager:
                             "_confidence": p.get("_confidence"),
                             "_liveness": p.get("_liveness", 1.0),
                             "_det_score": p.get("_det_score", 0.0),
+                            "_gender": p.get("_gender", "unknown"),
+                            "_gender_conf": p.get("_gender_conf", 0.0),
                         }
                     )
             ghost_store["faces"] = new_ghost_faces
@@ -897,6 +909,8 @@ class DetectorManager:
                     "liveness": g.get("_liveness", 1.0),
                     "det_score": g.get("_det_score", 0.0),
                     "embedding": None,
+                    "gender": g.get("_gender", "unknown"),
+                    "gender_confidence": g.get("_gender_conf", 0.0),
                     "ghost": True,
                 }
                 for g in ghost_store["faces"]

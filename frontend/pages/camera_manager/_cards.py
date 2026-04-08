@@ -104,7 +104,8 @@ class CardPreviewWidget(QWidget):
             def _cleanup(_t=_thread, _fn=_on_frame, _tm=_timer):
                 _tm.stop()
                 try:
-                    _t.frame_ready.disconnect(_fn)
+                    if hasattr(_t, "frame_ready"):
+                        _t.frame_ready.disconnect(_fn)
                 except (RuntimeError, TypeError):
                     logger.debug("Preview disconnect already released cam_id=%s", self._cam_id, exc_info=True)
 

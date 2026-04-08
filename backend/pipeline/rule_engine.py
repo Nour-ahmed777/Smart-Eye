@@ -1,4 +1,11 @@
 from backend.repository import db
+from backend.models.face_model import normalize_gender
+
+
+def _normalize_attr_value(attr, value):
+    if attr == "gender":
+        return normalize_gender(value)
+    return value
 import threading
 import time
 
@@ -6,7 +13,7 @@ import time
 def _compile_condition(cond):
     attr = cond["attribute"]
     op = cond["operator"]
-    expected = cond["value"]
+    expected = _normalize_attr_value(attr, cond["value"])
     is_obj = attr in ("object", "objects") or attr.startswith("object.") or attr.startswith("object:")
 
     if is_obj:
@@ -162,7 +169,7 @@ class RuleEngine:
                     except Exception:
                         results.append(None)
                 else:
-                    actual = detections.get(attr)
+                    actual = _normalize_attr_value(attr, detections.get(attr))
                     if actual is None or actual == "unknown":
                         results.append(None)
                         continue
@@ -253,12 +260,12 @@ def simulate_rule(rule_id, state):
             results.append(match)
             details.append(f"{attr} {cond['operator']} {cond['value']} => {match} (objects: {len(objs)})")
             continue
-        actual = state.get("detections", {}).get(attr)
+        actual = _normalize_attr_value(attr, state.get("detections", {}).get(attr))
         if actual is None or actual == "unknown":
             results.append(None)
             details.append(f"{attr}: skipped (unknown)")
             continue
-        match = _evaluate_condition(actual, cond["operator"], cond["value"])
+        match = _evaluate_condition(actual, cond["operator"], _normalize_attr_value(attr, cond["value"]))
         results.append(match)
         details.append(f"{attr} {cond['operator']} {cond['value']} => {match} (actual: {actual})")
     valid = [r for r in results if r is not None]

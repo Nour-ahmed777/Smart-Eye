@@ -18,7 +18,9 @@ from backend.analytics import stats_engine
 from utils import config
 
 
-def generate_report(filepath, date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, time_basis=None):
+def generate_report(
+    filepath, date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, time_basis=None, gender=None
+):
     doc = SimpleDocTemplate(filepath, pagesize=A4, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=24, textColor=colors.HexColor("#1a73e8"), spaceAfter=20)
@@ -54,10 +56,12 @@ def generate_report(filepath, date_from=None, date_to=None, camera_id=None, rule
         filters.append(f"Rule: {rule_name}")
     if min_alarm_level is not None:
         filters.append(f"Min alarm level: {min_alarm_level}")
+    if gender:
+        filters.append(f"Gender: {str(gender).title()}")
     if filters:
         elements.append(Paragraph(" | ".join(filters), subtitle_style))
     elements.append(Spacer(1, 20))
-    summary = stats_engine.get_summary(date_from, date_to, camera_id, min_alarm_level=min_alarm_level)
+    summary = stats_engine.get_summary(date_from, date_to, camera_id, min_alarm_level=min_alarm_level, gender=gender)
     elements.append(Paragraph("Summary", section_style))
     summary_data = [
         ["Metric", "Value"],
@@ -86,7 +90,13 @@ def generate_report(filepath, date_from=None, date_to=None, camera_id=None, rule
     elements.append(Spacer(1, 20))
     elements.append(Paragraph("Hourly Violation Distribution", section_style))
     hourly = stats_engine.get_hourly_violation_chart(
-        date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level, time_basis=time_basis
+        date_from,
+        date_to,
+        camera_id=camera_id,
+        rule_name=rule_name,
+        min_alarm_level=min_alarm_level,
+        time_basis=time_basis,
+        gender=gender,
     )
     hourly_data = [["Hour", "Violations"]]
     for h in hourly:
@@ -109,13 +119,13 @@ def generate_report(filepath, date_from=None, date_to=None, camera_id=None, rule
     elements.append(Spacer(1, 20))
     elements.append(Paragraph("Top Violators", section_style))
     persons = stats_engine.get_person_violations(
-        date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level
+        date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level, gender=gender
     )
-    person_data = [["Person", "Violations"]]
+    person_data = [["Person", "Gender", "Violations"]]
     for p in persons:
-        person_data.append([p["identity"], str(p["count"])])
+        person_data.append([p["identity"], (p.get("gender") or "unknown").title(), str(p["count"])])
     if len(person_data) > 1:
-        person_table = Table(person_data, colWidths=[3 * inch, 2 * inch])
+        person_table = Table(person_data, colWidths=[2.8 * inch, 1.2 * inch, 1.0 * inch])
         person_table.setStyle(
             TableStyle(
                 [
@@ -132,5 +142,34 @@ def generate_report(filepath, date_from=None, date_to=None, camera_id=None, rule
         elements.append(person_table)
     else:
         elements.append(Paragraph("No violations recorded in this period.", styles["Normal"]))
+
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("Violations by Gender", section_style))
+    by_gender = stats_engine.get_gender_violations(
+        date_from=date_from,
+        date_to=date_to,
+        camera_id=camera_id,
+        rule_name=rule_name,
+        min_alarm_level=min_alarm_level,
+        gender=gender,
+    )
+    gender_data = [["Gender", "Violations"]]
+    for row in by_gender:
+        gender_data.append([(row.get("gender") or "unknown").title(), str(row.get("count", 0))])
+    gender_table = Table(gender_data, colWidths=[2.5 * inch, 2.5 * inch])
+    gender_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4285f4")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.white]),
+            ]
+        )
+    )
+    elements.append(gender_table)
     doc.build(elements)
     return filepath
