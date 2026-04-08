@@ -12,7 +12,7 @@ class AuthOverlay(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet(f"QFrame {{ background: {_BG_BASE_92}; }}")
+        self.setStyleSheet("QFrame {{ background: {}; }}".format(_BG_BASE_92))
 
         self.login_card = AuthLoginCard(self)
         self.reset_card = AuthResetCard(self)

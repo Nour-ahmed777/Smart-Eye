@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import contextlib
 import logging
@@ -22,13 +22,15 @@ from PySide6.QtWidgets import (
 )
 
 from backend.repository import db
+from frontend.dialogs import apply_popup_theme
 
 from ._constants import _STYLESHEET, _TEXT_MUTED, _TEXT_SEC, _PRIMARY_BTN
 from ._enroll_panel import _EnrollPanelMixin
 from ._ui_builder import build_page_ui
 from ._widgets import RosterRowWidget
-from frontend.styles._btn_styles import _TEXT_BTN_GHOST
+from frontend.styles._btn_styles import _SECONDARY_BTN
 from frontend.styles._colors import _ACCENT_BG_22, _ACCENT_HI, _DANGER, _MUTED_BG_25, _SUCCESS
+from frontend.styles.page_styles import divider_style, muted_label_style, section_kicker_style, text_style, transparent_surface_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_9,
@@ -39,13 +41,13 @@ from frontend.ui_tokens import (
     FONT_SIZE_XL,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_HEAVY,
-    FONT_WEIGHT_SEMIBOLD,
     RADIUS_5,
     RADIUS_6,
     RADIUS_MD,
     RADIUS_SM,
     SIZE_BADGE_H,
     SIZE_CONTROL_MD,
+    SIZE_BTN_W_LG,
     SIZE_DIALOG_H_360,
     SIZE_DIALOG_W_500,
     SIZE_IMAGE_240,
@@ -53,15 +55,12 @@ from frontend.ui_tokens import (
     SIZE_PANEL_MAX,
     SIZE_ROW_52,
     SIZE_ROW_72,
-    SIZE_ROW_MD,
-    SIZE_SECTION_H,
     SPACE_10,
     SPACE_14,
     SPACE_20,
     SPACE_5,
     SPACE_LG,
     SPACE_MD,
-    SPACE_SM,
     SPACE_XL,
     SPACE_XXL,
     SPACE_XXS,
@@ -69,6 +68,18 @@ from frontend.ui_tokens import (
 )
 
 logger = logging.getLogger(__name__)
+_COUNT_BADGE_ACTIVE_STYLE = (
+    f"background: {_ACCENT_BG_22}; color: {_ACCENT_HI}; "
+    f"border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px; "
+    f"font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;"
+)
+_COUNT_BADGE_INACTIVE_STYLE = (
+    f"background: {_MUTED_BG_25}; color: {_TEXT_MUTED}; "
+    f"border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px; "
+    f"font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;"
+)
+_EMPTY_TITLE_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_BOLD)
+_EMPTY_SUB_STYLE = muted_label_style(size=FONT_SIZE_CAPTION)
 
 
 class FaceManagerPage(_EnrollPanelMixin, QWidget):
@@ -96,17 +107,9 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
     def _update_tab_count_styles(self):
         for key, lbl in self._tab_counts.items():
             if self._tab_buttons[key].isChecked():
-                lbl.setStyleSheet(f"""
-                    background: {_ACCENT_BG_22}; color: {_ACCENT_HI};
-                    border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px;
-                    font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;
-                """)
+                lbl.setStyleSheet(_COUNT_BADGE_ACTIVE_STYLE)
             else:
-                lbl.setStyleSheet(f"""
-                    background: {_MUTED_BG_25}; color: {_TEXT_MUTED};
-                    border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px;
-                    font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;
-                """)
+                lbl.setStyleSheet(_COUNT_BADGE_INACTIVE_STYLE)
 
     def on_activated(self):
         self._refresh()
@@ -197,13 +200,13 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             has_search = bool(self._search_edit.text().strip())
             title = QLabel("No results" if has_search else "No faces enrolled")
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            title.setStyleSheet(f"font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_BOLD}; color: {_TEXT_SEC};")
+            title.setStyleSheet(_EMPTY_TITLE_STYLE)
             el.addWidget(title)
 
             sub = QLabel("Try a different search term." if has_search else "Enroll a person or import a folder to get started.")
             sub.setWordWrap(True)
             sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            sub.setStyleSheet(f"font-size: {FONT_SIZE_CAPTION}px; color: {_TEXT_MUTED};")
+            sub.setStyleSheet(_EMPTY_SUB_STYLE)
             el.addWidget(sub)
 
             self._roster_vbox.addWidget(empty_w)
@@ -279,8 +282,8 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             fm = get_face_model()
             if fm is not None:
                 fm.invalidate_known_cache()
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError):
+            logger.warning("Failed to invalidate known face cache after delete face_id=%s", face_id, exc_info=True)
 
     def _delete_inbox(self, face_id: int):
         db.delete_face_inbox(face_id)
@@ -297,8 +300,8 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             fm = get_face_model()
             if fm is not None:
                 fm.invalidate_known_cache()
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError):
+            logger.warning("Failed to invalidate known face cache after toggle face_id=%s", face_id, exc_info=True)
         self._refresh()
 
     def _show_inbox_panel(self, face: dict):
@@ -376,8 +379,8 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
         if hasattr(emb, "tobytes"):
             try:
                 emb = emb.tobytes()
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                logger.warning("Failed to convert embedding to bytes for inbox face id=%s", face.get("id"), exc_info=True)
         from utils.embedding_utils import embedding_to_bytes
 
         emb_model = face.get("embedding_model", "") or ""
@@ -390,7 +393,7 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
                     emb_model = fm.model_name
         try:
             emb_bytes = embedding_to_bytes(emb) if not isinstance(emb, (bytes, bytearray)) else bytes(emb)
-        except Exception:
+        except (TypeError, ValueError):
             return
         new_id = db.add_known_face(
             name=name or "Unknown",
@@ -460,14 +463,14 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
         dlg.setMinimumWidth(SIZE_PANEL_MAX)
         from ._constants import _STYLESHEET
 
-        dlg.setStyleSheet(_STYLESHEET)
+        apply_popup_theme(dlg, _STYLESHEET)
 
         vl = QVBoxLayout(dlg)
         vl.setContentsMargins(SPACE_XL, SPACE_20, SPACE_XL, SPACE_20)
         vl.setSpacing(SPACE_14)
 
         title = QLabel("How do you want to import?")
-        title.setStyleSheet(f"color:{_TEXT_PRI}; font-size:{FONT_SIZE_SUBHEAD}px; font-weight:{FONT_WEIGHT_BOLD};")
+        title.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_SUBHEAD, weight=FONT_WEIGHT_BOLD))
         vl.addWidget(title)
 
         desc = QLabel(
@@ -475,32 +478,42 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             + (f"<span style='color:{_ACCENT_HI}'>⊞ Contains sub-folders</span>  " if has_subdirs else "")
             + (f"<span style='color:{_SUCCESS}'>⊞ Contains images</span>" if has_images else "")
         )
-        desc.setStyleSheet(f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px;")
+        desc.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_LABEL))
         desc.setWordWrap(True)
         vl.addWidget(desc)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"background:{_BORDER_DIM}; border:none; max-height:{SPACE_XXXS}px;")
+        sep.setStyleSheet(divider_style(_BORDER_DIM))
         vl.addWidget(sep)
 
         def _card(icon, title_txt, body_txt):
             btn = QPushButton()
             btn.setFixedHeight(SIZE_ROW_72)
-            btn.setStyleSheet(f"""
+            btn.setStyleSheet(
+                """
                 QPushButton {{
-                    background:{_BG_RAISED}; border:{SPACE_XXXS}px solid {_BORDER_DIM};
-                    border-radius:{RADIUS_MD}px; text-align:left; padding:0 {SPACE_14}px;
+                    background:{bg}; border:{bw}px solid {border};
+                    border-radius:{radius}px; text-align:left; padding:0 {pad}px;
                 }}
                 QPushButton:hover {{
-                    background:{_BG_OVERLAY}; border-color:{_ACCENT_HI};
+                    background:{hover_bg}; border-color:{accent};
                 }}
-            """)
+                """.format(
+                    bg=_BG_RAISED,
+                    bw=SPACE_XXXS,
+                    border=_BORDER_DIM,
+                    radius=RADIUS_MD,
+                    pad=SPACE_14,
+                    hover_bg=_BG_OVERLAY,
+                    accent=_ACCENT_HI,
+                )
+            )
             inner = QHBoxLayout(btn)
             inner.setContentsMargins(SPACE_MD, 0, SPACE_MD, 0)
             inner.setSpacing(SPACE_14)
             ico = QLabel(icon)
-            ico.setStyleSheet(f"font-size:{FONT_SIZE_XL}px; color:{_ACCENT_HI}; background:transparent; border:none;")
+            ico.setStyleSheet(text_style(_ACCENT_HI, size=FONT_SIZE_XL, extra="background:transparent; border:none;"))
             inner.addWidget(ico)
             txt_w = QWidget()
             txt_w.setStyleSheet("background:transparent;")
@@ -508,9 +521,9 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             txt_l.setContentsMargins(0, 0, 0, 0)
             txt_l.setSpacing(SPACE_XXS)
             t = QLabel(title_txt)
-            t.setStyleSheet(f"color:{_TEXT_PRI}; font-size:{FONT_SIZE_BODY}px; font-weight:{FONT_WEIGHT_BOLD}; background:transparent;")
+            t.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_BOLD, extra="background:transparent;"))
             b = QLabel(body_txt)
-            b.setStyleSheet(f"color:{_TEXT_MUTED}; font-size:{FONT_SIZE_CAPTION}px; background:transparent;")
+            b.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION) + " background:transparent;")
             txt_l.addWidget(t)
             txt_l.addWidget(b)
             inner.addWidget(txt_w, stretch=1)
@@ -527,8 +540,8 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             "Folder contains sub-folders, each named after a person",
         )
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(SIZE_SECTION_H)
-        cancel_btn.setStyleSheet(_TEXT_BTN_GHOST)
+        cancel_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
+        cancel_btn.setStyleSheet(_SECONDARY_BTN)
 
         vl.addWidget(single_btn)
         vl.addWidget(batch_btn)
@@ -624,18 +637,18 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
         dlg.setModal(True)
         dlg.setMinimumWidth(SIZE_DIALOG_W_500)
         dlg.setMinimumHeight(SIZE_DIALOG_H_360)
-        dlg.setStyleSheet(_STYLESHEET)
+        apply_popup_theme(dlg, _STYLESHEET)
 
         vl = QVBoxLayout(dlg)
         vl.setContentsMargins(SPACE_XL, SPACE_20, SPACE_XL, SPACE_20)
         vl.setSpacing(SPACE_MD)
 
         hdr = QLabel("Batch Face Import")
-        hdr.setStyleSheet(f"color:{_TEXT_PRI}; font-size:{FONT_SIZE_15}px; font-weight:{FONT_WEIGHT_BOLD};")
+        hdr.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_15, weight=FONT_WEIGHT_BOLD))
         vl.addWidget(hdr)
 
         sub = QLabel(f"Importing from: {folder}")
-        sub.setStyleSheet(f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_CAPTION}px;")
+        sub.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_CAPTION))
         sub.setWordWrap(True)
         vl.addWidget(sub)
 
@@ -645,13 +658,22 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
         prog_bar.setValue(0)
         prog_bar.setFixedHeight(SPACE_10)
         prog_bar.setTextVisible(False)
-        prog_bar.setStyleSheet(f"""
-            QProgressBar {{ background:{_BG_RAISED}; border:{SPACE_XXXS}px solid {_BORDER_DIM};
-                           border-radius:{RADIUS_5}px; }}
-            QProgressBar::chunk {{ background:{_ACCENT}; border-radius:{RADIUS_SM}px; }}
-        """)
+        prog_bar.setStyleSheet(
+            """
+            QProgressBar {{ background:{bg}; border:{bw}px solid {border};
+                           border-radius:{radius}px; }}
+            QProgressBar::chunk {{ background:{accent}; border-radius:{chunk_radius}px; }}
+            """.format(
+                bg=_BG_RAISED,
+                bw=SPACE_XXXS,
+                border=_BORDER_DIM,
+                radius=RADIUS_5,
+                accent=_ACCENT,
+                chunk_radius=RADIUS_SM,
+            )
+        )
         prog_lbl = QLabel("Starting…")
-        prog_lbl.setStyleSheet(f"color:{_TEXT_MUTED}; font-size:{FONT_SIZE_CAPTION}px; min-width:{SIZE_LABEL_W_50}px;")
+        prog_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION) + f" min-width:{SIZE_LABEL_W_50}px;")
         prog_row.addWidget(prog_bar, stretch=1)
         prog_row.addWidget(prog_lbl)
         vl.addLayout(prog_row)
@@ -666,14 +688,14 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
         vl.addWidget(log, stretch=1)
 
         close_btn = QPushButton("Close")
-        close_btn.setFixedHeight(SIZE_SECTION_H)
+        close_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
         close_btn.setEnabled(False)
-        close_btn.setStyleSheet(
-            f"background:{_BG_RAISED}; border:{SPACE_XXXS}px solid {_BORDER_DIM};"
-            f"border-radius:{RADIUS_MD}px; color:{_TEXT_SEC}; font-weight:{FONT_WEIGHT_SEMIBOLD};"
-        )
+        close_btn.setStyleSheet(_SECONDARY_BTN)
         close_btn.clicked.connect(dlg.accept)
-        vl.addWidget(close_btn)
+        close_row = QHBoxLayout()
+        close_row.addStretch()
+        close_row.addWidget(close_btn)
+        vl.addLayout(close_row)
 
         worker = _BatchImportWorker(folder)
 
@@ -696,8 +718,8 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
                 fm = get_face_model()
                 if fm:
                     fm.invalidate_known_cache()
-            except Exception:
-                pass
+            except (ImportError, RuntimeError, OSError):
+                logger.warning("Failed to invalidate known cache after batch import", exc_info=True)
 
         worker.progress.connect(_on_progress)
         worker.finished.connect(_on_done)
@@ -783,6 +805,7 @@ class _BatchImportWorker(QThread):
             if skipped:
                 msg += f"  {skipped} skipped (no faces detected)."
             self.finished.emit(True, msg)
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             logger.exception("Batch face import failed")
             self.finished.emit(False, str(exc))
+

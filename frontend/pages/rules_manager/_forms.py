@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sqlite3
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QComboBox,
@@ -22,32 +24,24 @@ from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.styles._colors import _ACCENT_BG_08, _SUCCESS_BG_10, _SUCCESS_BG_20
 from frontend.styles._banner_styles import make_edit_banner
+from frontend.styles._btn_styles import _SECONDARY_BTN
 from ._widgets import build_rule_header
 from frontend.styles._input_styles import _FORM_INPUT_TITLE, _FORM_INPUTS
 from frontend.ui_tokens import (
-    FONT_SIZE_15,
     FONT_SIZE_7,
     FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
     FONT_SIZE_MICRO,
-    FONT_SIZE_TINY,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_NORMAL,
     RADIUS_3,
     RADIUS_5,
-    RADIUS_7,
-    RADIUS_9,
-    RADIUS_LG,
     SIZE_BTN_W_MD,
     SIZE_BTN_W_SM,
     SIZE_CONTROL_MD,
-    SIZE_ICON_64,
     SIZE_LABEL_W,
-    SIZE_ROW_48,
-    SIZE_ROW_72,
     SIZE_PANEL_MD,
     SIZE_ROW_LG,
-    SIZE_SECTION_H,
     SPACE_10,
     SPACE_14,
     SPACE_18,
@@ -63,22 +57,16 @@ from frontend.ui_tokens import (
 )
 
 from ._constants import (
-    _ACCENT,
-    _ACCENT_HI,
     _ACTION_META,
     _ADD_BTN_BLUE,
-    _BG_OVERLAY,
-    _BG_RAISED,
     _BG_SURFACE,
     _BORDER,
     _BORDER_DIM,
     _PRIMARY_BTN,
     _SUCCESS,
-    _TEXT_BTN_GHOST,
     _TEXT_BTN_RED,
     _TEXT_BTN_RED_CONFIRM,
     _TEXT_MUTED,
-    _TEXT_PRI,
     _TEXT_SEC,
     _combo_ss,
     _make_sdiv,
@@ -247,7 +235,7 @@ class _BaseRuleForm(QWidget):
         cond_lay.setSpacing(SPACE_SM)
 
         add_cond = QPushButton("+  Add Condition")
-        add_cond.setFixedHeight(SIZE_SECTION_H)
+        add_cond.setFixedHeight(SIZE_CONTROL_MD)
         add_cond.setStyleSheet(_ADD_BTN_BLUE)
         add_cond.clicked.connect(self._add_condition_row)
         cond_lay.addWidget(add_cond)
@@ -287,7 +275,7 @@ class _BaseRuleForm(QWidget):
         alarm_lay.setSpacing(SPACE_10)
 
         add_alarm = QPushButton("+  Add Escalation Level")
-        add_alarm.setFixedHeight(SIZE_SECTION_H)
+        add_alarm.setFixedHeight(SIZE_CONTROL_MD)
         add_alarm.setStyleSheet(_ADD_BTN_BLUE)
         add_alarm.clicked.connect(self._add_alarm_card)
         alarm_lay.addWidget(add_alarm)
@@ -358,7 +346,7 @@ class _EditRuleForm(_BaseRuleForm):
             _a = self._rules_service.get_alarm_actions(self._rule_id)
             if _a:
                 heat_level = max(heat_level, max(int(a.get("escalation_level", 0) or 0) for a in _a) * 3)
-        except Exception:
+        except (sqlite3.Error, RuntimeError, AttributeError, TypeError, ValueError):
             pass
         wl.addWidget(
             build_rule_header(
@@ -398,7 +386,7 @@ class _EditRuleForm(_BaseRuleForm):
         cancel = QPushButton("Cancel")
         cancel.setFixedHeight(SIZE_CONTROL_MD)
         cancel.setFixedWidth(SIZE_BTN_W_SM)
-        cancel.setStyleSheet(_TEXT_BTN_GHOST)
+        cancel.setStyleSheet(_SECONDARY_BTN)
         cancel.clicked.connect(lambda: self.cancel_requested.emit())
         ab.addWidget(cancel)
 
@@ -509,7 +497,7 @@ class NewRulePanel(_BaseRuleForm):
         close = QPushButton("Close")
         close.setFixedHeight(SIZE_CONTROL_MD)
         close.setFixedWidth(SIZE_BTN_W_SM)
-        close.setStyleSheet(_TEXT_BTN_GHOST)
+        close.setStyleSheet(_SECONDARY_BTN)
         close.clicked.connect(lambda: self.close_requested.emit())
         ab.addWidget(close)
         save = QPushButton("Save")

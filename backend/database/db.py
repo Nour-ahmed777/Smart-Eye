@@ -503,9 +503,17 @@ def delete_camera(cam_id):
     def _op(conn):
         cur = conn.cursor()
         try:
+            zone_ids = [r[0] for r in cur.execute("SELECT id FROM zones WHERE camera_id=?", (cam_id,)).fetchall()]
+            if zone_ids:
+                placeholders = ",".join("?" for _ in zone_ids)
+                cur.execute(f"UPDATE rules SET zone_id=NULL WHERE zone_id IN ({placeholders})", zone_ids)
+
+            cur.execute("DELETE FROM clips WHERE camera_id=?", (cam_id,))
+            cur.execute("DELETE FROM face_inbox WHERE camera_id=?", (cam_id,))
             cur.execute("DELETE FROM detection_logs WHERE camera_id=?", (cam_id,))
             cur.execute("DELETE FROM access_log WHERE camera_id=?", (cam_id,))
             cur.execute("UPDATE rules SET camera_id=NULL WHERE camera_id=?", (cam_id,))
+            cur.execute("DELETE FROM camera_plugin_classes WHERE camera_id=?", (cam_id,))
             cur.execute("DELETE FROM camera_plugins WHERE camera_id=?", (cam_id,))
             cur.execute("DELETE FROM zones WHERE camera_id=?", (cam_id,))
             cur.execute("DELETE FROM cameras WHERE id=?", (cam_id,))
@@ -1289,7 +1297,7 @@ def backup(dest_path):
     _write_call(_op)
 
 
-def get_detection_stats(date_from=None, date_to=None, camera_id=None):
+def get_detection_stats(date_from=None, date_to=None, camera_id=None, min_alarm_level=None):
     q = "SELECT COUNT(*) as total, SUM(CASE WHEN alarm_level>0 THEN 1 ELSE 0 END) as violations FROM detection_logs WHERE 1=1"
     params = []
     if date_from:
@@ -1301,40 +1309,68 @@ def get_detection_stats(date_from=None, date_to=None, camera_id=None):
     if camera_id:
         q += " AND camera_id=?"
         params.append(camera_id)
+    if min_alarm_level is not None:
+        q += " AND alarm_level>=?"
+        params.append(int(min_alarm_level))
     row = _conn.execute(q, params).fetchone()
     return dict(row)
 
 
-def get_hourly_violations(date_from=None, date_to=None):
-    q = "SELECT strftime('%H', timestamp) as hour, COUNT(*) as count FROM detection_logs WHERE alarm_level>0"
+def get_hourly_violations(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, time_basis=None):
+    if time_basis == "Local":
+        q = "SELECT strftime('%H', timestamp, 'localtime') as hour, COUNT(*) as count FROM detection_logs WHERE 1=1"
+    else:
+        q = "SELECT strftime('%H', timestamp) as hour, COUNT(*) as count FROM detection_logs WHERE 1=1"
     params = []
+    if min_alarm_level is not None:
+        q += " AND alarm_level>=?"
+        params.append(int(min_alarm_level))
+    else:
+        q += " AND alarm_level>0"
     if date_from:
         q += " AND timestamp>=?"
         params.append(date_from)
     if date_to:
         q += " AND timestamp<=?"
         params.append(date_to)
+    if camera_id:
+        q += " AND camera_id=?"
+        params.append(camera_id)
+    if rule_name:
+        q += " AND rules_triggered LIKE ?"
+        params.append(f"%{rule_name}%")
     q += " GROUP BY hour ORDER BY hour"
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
-def get_violations_by_person(date_from=None, date_to=None, limit=20):
+def get_violations_by_person(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, limit=20):
     q = """SELECT identity, COUNT(*) as count
            FROM detection_logs
-           WHERE alarm_level>0 AND identity IS NOT NULL AND identity != ''"""
+           WHERE identity IS NOT NULL AND identity != ''"""
     params = []
+    if min_alarm_level is not None:
+        q += " AND alarm_level>=?"
+        params.append(int(min_alarm_level))
+    else:
+        q += " AND alarm_level>0"
     if date_from:
         q += " AND timestamp>=?"
         params.append(date_from)
     if date_to:
         q += " AND timestamp<=?"
         params.append(date_to)
+    if camera_id:
+        q += " AND camera_id=?"
+        params.append(camera_id)
+    if rule_name:
+        q += " AND rules_triggered LIKE ?"
+        params.append(f"%{rule_name}%")
     q += " GROUP BY identity ORDER BY count DESC LIMIT ?"
     params.append(limit)
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
-def get_camera_activity(date_from=None, date_to=None):
+def get_camera_activity(date_from=None, date_to=None, camera_id=None):
     q = """SELECT c.name as camera_name, COUNT(dl.id) as count
            FROM cameras c
            LEFT JOIN detection_logs dl ON c.id=dl.camera_id"""
@@ -1346,14 +1382,21 @@ def get_camera_activity(date_from=None, date_to=None):
     if date_to:
         conditions.append("dl.timestamp<=?")
         params.append(date_to)
+    if camera_id:
+        conditions.append("c.id=?")
+        params.append(camera_id)
     if conditions:
         q += " WHERE " + " AND ".join(conditions)
     q += " GROUP BY c.id ORDER BY count DESC"
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
-def get_compliance_over_time(rule_name=None, date_from=None, date_to=None):
-    q = """SELECT DATE(timestamp) as day,
+def get_compliance_over_time(rule_name=None, date_from=None, date_to=None, camera_id=None, time_basis=None):
+    if time_basis == "Local":
+        date_expr = "DATE(timestamp, 'localtime')"
+    else:
+        date_expr = "DATE(timestamp)"
+    q = f"""SELECT {date_expr} as day,
            COUNT(*) as total,
            SUM(CASE WHEN alarm_level=0 THEN 1 ELSE 0 END) as compliant
            FROM detection_logs WHERE 1=1"""
@@ -1367,8 +1410,35 @@ def get_compliance_over_time(rule_name=None, date_from=None, date_to=None):
     if date_to:
         q += " AND timestamp<=?"
         params.append(date_to)
+    if camera_id:
+        q += " AND camera_id=?"
+        params.append(camera_id)
     q += " GROUP BY day ORDER BY day"
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
+
+
+def get_identified_count(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None):
+    q = """SELECT COUNT(DISTINCT identity) as count
+           FROM detection_logs
+           WHERE identity IS NOT NULL AND identity != '' AND identity != 'Unknown'"""
+    params = []
+    if min_alarm_level is not None:
+        q += " AND alarm_level>=?"
+        params.append(int(min_alarm_level))
+    if rule_name:
+        q += " AND rules_triggered LIKE ?"
+        params.append(f"%{rule_name}%")
+    if date_from:
+        q += " AND timestamp>=?"
+        params.append(date_from)
+    if date_to:
+        q += " AND timestamp<=?"
+        params.append(date_to)
+    if camera_id:
+        q += " AND camera_id=?"
+        params.append(camera_id)
+    row = _conn.execute(q, params).fetchone()
+    return dict(row) if row else {"count": 0}
 
 
 def get_faces():

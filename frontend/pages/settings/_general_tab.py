@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Signal, QTimer, QPropertyAnimation
+from PySide6.QtCore import Signal, QPropertyAnimation
 from PySide6.QtWidgets import (
     QLabel,
     QHBoxLayout,
@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.widgets.toggle_switch import ToggleSwitch
-from frontend.widgets.toast import show_toast
 from frontend.styles._colors import _SUCCESS
 from frontend.ui_tokens import (
     FONT_SIZE_LABEL,
@@ -219,7 +218,7 @@ class GeneralTab(QWidget):
             db.import_settings_json(defaults)
             self.load()
             QMessageBox.information(self, "Reset", "Settings restored to defaults.")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             logger.exception("Failed to reset settings")
             QMessageBox.critical(self, "Error", f"Failed to reset settings:\n{exc}")
 
@@ -229,3 +228,4 @@ class GeneralTab(QWidget):
         self._minimize_tray_toggle.setChecked(db.get_bool("minimize_to_tray", False))
         self._debug_toggle.setChecked(db.get_bool("debug_mode_enabled", False))
         self._experimental_toggle.setChecked(db.get_bool("experimental_mode_enabled", False))
+

@@ -12,19 +12,17 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.app_theme import safe_set_point_size
-from frontend.styles._colors import _TEXT_SEC, _TEXT_MUTED, _DANGER, _WARNING, _SUCCESS
+from frontend.styles._colors import _TEXT_SEC, _DANGER, _WARNING, _SUCCESS
 from frontend.styles._card_styles import _CARD_BASE, _CARD_HOVER
+from frontend.styles.page_styles import text_style, transparent_surface_style
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.ui_tokens import (
-    FONT_SIZE_BODY,
     FONT_SIZE_LABEL,
     FONT_SIZE_SUBHEAD,
     FONT_SIZE_CAPTION,
     FONT_WEIGHT_NORMAL,
     FONT_WEIGHT_SEMIBOLD,
     FONT_WEIGHT_BOLD,
-    RADIUS_XL,
-    SPACE_6,
     SPACE_SM,
     SPACE_MD,
     SPACE_LG,
@@ -45,7 +43,7 @@ class ModelCardWidget(QFrame):
         super().__init__(parent)
         self._plugin = plugin_data
         self._plugin_id = plugin_data.get("id", 0)
-        self.setStyleSheet(f"{_CARD_BASE}{_CARD_HOVER}")
+        self.setStyleSheet("{}{}".format(_CARD_BASE, _CARD_HOVER))
         self.setFixedHeight(SIZE_PANEL_H_MD)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout = QVBoxLayout(self)
@@ -65,7 +63,13 @@ class ModelCardWidget(QFrame):
         top_row.addWidget(self._enable_check)
         layout.addLayout(top_row)
         type_label = QLabel(f"Type: {plugin_data.get('model_type', 'onnx')}  |  v{plugin_data.get('version', '1.0')}")
-        type_label.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
+        type_label.setStyleSheet(
+            text_style(
+                _TEXT_SEC,
+                size=FONT_SIZE_CAPTION,
+                extra=transparent_surface_style(),
+            )
+        )
         layout.addWidget(type_label)
 
         status_row = QHBoxLayout()
@@ -78,7 +82,7 @@ class ModelCardWidget(QFrame):
         err = plugin_data.get("last_error")
         if err:
             err_lbl = QLabel("Failed")
-            err_lbl.setStyleSheet(f"color: {_DANGER}; font-weight: {FONT_WEIGHT_SEMIBOLD}; font-size: {FONT_SIZE_CAPTION}px;")
+            err_lbl.setStyleSheet(text_style(_DANGER, size=FONT_SIZE_CAPTION, weight=FONT_WEIGHT_SEMIBOLD))
             err_lbl.setToolTip(err)
             status_row.addWidget(err_lbl)
         status_row.addStretch()
@@ -87,12 +91,18 @@ class ModelCardWidget(QFrame):
         desc = plugin_data.get("description", "")
         if desc:
             desc_label = QLabel(desc)
-            desc_label.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; background: transparent;")
+            desc_label.setStyleSheet(
+                text_style(
+                    _TEXT_SEC,
+                    size=FONT_SIZE_LABEL,
+                    extra=transparent_surface_style(),
+                )
+            )
             desc_label.setWordWrap(True)
             layout.addWidget(desc_label)
         conf_row = QHBoxLayout()
         conf_label = QLabel("Confidence:")
-        conf_label.setStyleSheet("background: transparent;")
+        conf_label.setStyleSheet(transparent_surface_style())
         conf_row.addWidget(conf_label)
         self._conf_slider = QSlider(Qt.Orientation.Horizontal)
         self._conf_slider.setRange(10, 100)
@@ -101,7 +111,7 @@ class ModelCardWidget(QFrame):
         conf_row.addWidget(self._conf_slider)
         self._conf_value = QLabel(f"{self._conf_slider.value()}%")
         self._conf_value.setFixedWidth(SIZE_ROW_MD)
-        self._conf_value.setStyleSheet("background: transparent;")
+        self._conf_value.setStyleSheet(transparent_surface_style())
         conf_row.addWidget(self._conf_value)
         layout.addLayout(conf_row)
         btn_row = QHBoxLayout()
@@ -129,9 +139,9 @@ class ModelCardWidget(QFrame):
         provider = (plugin.get("last_provider") or "").lower()
         last_error = plugin.get("last_error")
         if last_error:
-            return ("Load failed", f"color: {_DANGER}; background: transparent; font-weight: {FONT_WEIGHT_BOLD};")
+            return ("Load failed", text_style(_DANGER, weight=FONT_WEIGHT_BOLD, extra=transparent_surface_style()))
         if provider.startswith("cpu"):
-            return ("CPU (fallback)", f"color: {_WARNING}; background: transparent; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+            return ("CPU (fallback)", text_style(_WARNING, weight=FONT_WEIGHT_SEMIBOLD, extra=transparent_surface_style()))
         if provider.startswith("dml"):
-            return ("GPU (DML)", f"color: {_SUCCESS}; background: transparent; font-weight: {FONT_WEIGHT_SEMIBOLD};")
-        return ("Provider: auto", f"color: {_TEXT_SEC}; background: transparent; font-weight: {FONT_WEIGHT_NORMAL};")
+            return ("GPU (DML)", text_style(_SUCCESS, weight=FONT_WEIGHT_SEMIBOLD, extra=transparent_surface_style()))
+        return ("Provider: auto", text_style(_TEXT_SEC, weight=FONT_WEIGHT_NORMAL, extra=transparent_surface_style()))

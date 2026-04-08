@@ -1,1 +1,1 @@
-from ._page import AnalyticsPage
+from ._page import AnalyticsPage as AnalyticsPage

@@ -22,13 +22,11 @@ from frontend.styles._colors import (
     _ACCENT_HI,
     _ACCENT_HI_BG_10,
     _ACCENT_HI_BG_20,
-    _ACCENT_HI_BG_78,
     _BG_BASE_92,
     _BG_NAV_ALT,
     _BG_NAV_DARK,
     _BG_SIDEBAR_ALT,
     _BG_SIDEBAR_START,
-    _BORDER,
     _MUTED_BORDER_60,
     _TEXT_MUTED,
     _TEXT_ON_ACCENT,
@@ -39,6 +37,7 @@ from frontend.styles._colors import (
     _WHITE_04,
 )
 from frontend.styles._shadows import apply_shadow_glow
+from frontend.styles.page_styles import muted_label_style, text_style, transparent_surface_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_19,
@@ -91,7 +90,7 @@ def _read_app_info() -> dict:
     try:
         with open("app_info.json", "r", encoding="utf-8") as f:
             return _json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         return {"version": "0.1.0-alpha"}
 
 
@@ -127,7 +126,7 @@ class _LogoMonogram(QWidget):
                     self._pix = pix.copy(left, top, right - left + 1, bottom - top + 1)
                 else:
                     self._pix = pix
-        except Exception:
+        except (OSError, RuntimeError):
             self._pix = None
 
     def paintEvent(self, _):
@@ -253,17 +252,19 @@ class NavButton(QWidget):
     def _apply_style(self, hovered: bool):
         focused = self._focused and not self._locked
         if self._locked:
-            self.setStyleSheet(f"background: transparent; border-radius: {RADIUS_MD}px;")
+            self.setStyleSheet("background: transparent; border-radius: {r}px;".format(r=RADIUS_MD))
             if self._has_pix and self._icon_glow:
                 self._icon_glow.setBlurRadius(0)
-            self._icon_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px; background: transparent; opacity: 0.6;")
+            self._icon_lbl.setStyleSheet(
+                "{style} background: transparent; opacity: 0.6;".format(style=muted_label_style(size=FONT_SIZE_LABEL))
+            )
             self._text_lbl.setStyleSheet(
                 f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
                 f" background: transparent; opacity: 0.5;"
             )
             return
         if self._active:
-            self.setStyleSheet(f"background: transparent; border-radius: {RADIUS_MD}px;")
+            self.setStyleSheet("background: transparent; border-radius: {r}px;".format(r=RADIUS_MD))
             if self._has_pix and self._icon_glow:
                 glow_color = self._icon_glow.color()
                 glow_color.setAlpha(180)
@@ -279,7 +280,7 @@ class NavButton(QWidget):
                 f"color: {_ACCENT_HI}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_BOLD}; background: transparent;"
             )
         elif hovered or focused:
-            self.setStyleSheet(f"background: transparent; border-radius: {RADIUS_MD}px;")
+            self.setStyleSheet("background: transparent; border-radius: {r}px;".format(r=RADIUS_MD))
             if self._has_pix and self._icon_glow:
                 glow_color = self._icon_glow.color()
                 glow_color.setAlpha(140)
@@ -295,9 +296,9 @@ class NavButton(QWidget):
                 f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; background: transparent;"
             )
             if focused:
-                self.setStyleSheet(f"background: {_ACCENT_HI_BG_10}; border-radius: {RADIUS_MD}px;")
+                self.setStyleSheet("background: {bg}; border-radius: {r}px;".format(bg=_ACCENT_HI_BG_10, r=RADIUS_MD))
         else:
-            self.setStyleSheet(f"background: transparent; border-radius: {RADIUS_MD}px;")
+            self.setStyleSheet("background: transparent; border-radius: {r}px;".format(r=RADIUS_MD))
             if self._has_pix and self._icon_glow:
                 glow_color = self._icon_glow.color()
                 glow_color.setAlpha(0)
@@ -360,12 +361,12 @@ class SidebarWidget(QWidget):
 
         self.setFixedWidth(_SIDEBAR_COLLAPSED)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.setStyleSheet(f"""
+        self.setStyleSheet("""
             QWidget {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {_BG_SIDEBAR}, stop:1 {_BG_SIDEBAR_ALT});
+                    stop:0 {bg0}, stop:1 {bg1});
             }}
-        """)
+        """.format(bg0=_BG_SIDEBAR, bg1=_BG_SIDEBAR_ALT))
 
         self._width_anim = QPropertyAnimation(self, b"minimumWidth", self)
         self._width_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -417,7 +418,7 @@ class SidebarWidget(QWidget):
                 fams = QFontDatabase.applicationFontFamilies(font_id)
                 if fams:
                     font_family = fams[0]
-        except Exception:
+        except (OSError, RuntimeError):
             pass
         logo_font = QFont()
         logo_font.setFamily(font_family)
@@ -447,7 +448,7 @@ class SidebarWidget(QWidget):
         divider = QFrame(self)
         divider.setFrameShape(QFrame.Shape.HLine)
         divider.setFixedHeight(SPACE_XXXS)
-        divider.setStyleSheet(f"background: {_BORDER_SIDE}; border: none;")
+        divider.setStyleSheet("background: {bg}; border: none;".format(bg=_BORDER_SIDE))
         root.addWidget(divider)
 
         scroll = QScrollArea(self)
@@ -503,7 +504,7 @@ class SidebarWidget(QWidget):
         bot_divider = QFrame(self)
         bot_divider.setFrameShape(QFrame.Shape.HLine)
         bot_divider.setFixedHeight(SPACE_XXXS)
-        bot_divider.setStyleSheet(f"background: {_BORDER_SIDE}; border: none;")
+        bot_divider.setStyleSheet("background: {bg}; border: none;".format(bg=_BORDER_SIDE))
         root.addWidget(bot_divider)
 
         acc_w = QWidget()
@@ -526,7 +527,7 @@ class SidebarWidget(QWidget):
         acc_row.addWidget(self._avatar)
 
         self._acc_email = QLabel("")
-        self._acc_email.setStyleSheet(f"color: {_TEXT_PRI}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
+        self._acc_email.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_CAPTION, extra="background: transparent;"))
         acc_row.addWidget(self._acc_email, stretch=1)
 
         self._logout_btn = QToolButton()
@@ -544,7 +545,7 @@ class SidebarWidget(QWidget):
 
         self._ver_lbl = QLabel(f"v{_APP_INFO.get('version', '0.1.0-alpha')}")
         self._ver_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._ver_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_9}px; background: transparent;")
+        self._ver_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_9) + " background: transparent;")
         acc_l.addWidget(self._ver_lbl)
 
         root.addWidget(acc_w)
@@ -556,7 +557,7 @@ class SidebarWidget(QWidget):
     def _on_nav_clicked(self, key: str):
         try:
             print(f"NAV_CLICK: {key}")
-        except Exception:
+        except (RuntimeError, OSError):
             pass
         self._on_navigate(key)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QTimer, QPropertyAnimation
+from PySide6.QtCore import QPropertyAnimation
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFrame,
@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.widgets.toggle_switch import ToggleSwitch
-from frontend.widgets.toast import show_toast
 from frontend.styles._colors import _SUCCESS
 from frontend.ui_tokens import (
     FONT_SIZE_LABEL,

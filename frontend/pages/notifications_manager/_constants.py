@@ -1,40 +1,30 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QSizePolicy,
     QWidget,
 )
+from frontend.app_theme import page_base_styles
 
-from frontend.styles._btn_styles import _PRIMARY_BTN, _TEXT_BTN_BLUE, _TEXT_BTN_GHOST, _TEXT_BTN_RED, _TEXT_BTN_RED_CONFIRM
 
 from frontend.styles._colors import (
+    _BG_BASE,
     _BG_SURFACE,
     _BG_RAISED,
-    _BG_OVERLAY,
     _BORDER,
     _BORDER_DIM,
     _TEXT_PRI,
     _TEXT_SEC,
+    _TEXT_MUTED,
     _ACCENT,
     _ACCENT_HI,
-    _TEXT_MUTED,
-    _PURPLE,
-    _PURPLE_DIM,
-    _BG_BASE,
-    _SUCCESS,
-    _ACCENT_BG_22,
-    _ACCENT_BG_12,
-    _PURPLE_BG_12,
     _ACCENT_HI_BG_03,
-    _ACCENT_HI_BG_10,
-    _ACCENT_HI_BG_12,
     _ACCENT_HI_BG_28,
     _ACCENT_HI_BG_55,
 )
+from frontend.styles._btn_styles import _PRIMARY_BTN, _TEXT_BTN_BLUE, _TEXT_BTN_RED, _TEXT_BTN_RED_CONFIRM
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
@@ -42,18 +32,11 @@ from frontend.ui_tokens import (
     FONT_SIZE_MICRO,
     FONT_SIZE_TINY,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_NORMAL,
     RADIUS_5,
-    RADIUS_MD,
     RADIUS_SM,
     RADIUS_XS,
-    SIZE_CONTROL_22,
     SIZE_CONTROL_SM,
-    SIZE_CONTROL_XS,
-    SIZE_ICON_10,
-    SIZE_ICON_12,
-    SIZE_ITEM_SM,
     SIZE_LABEL_W,
     SIZE_PILL_H,
     SIZE_ROW_52,
@@ -64,24 +47,20 @@ from frontend.ui_tokens import (
     SPACE_5,
     SPACE_6,
     SPACE_LG,
-    SPACE_MD,
     SPACE_SM,
     SPACE_XL,
     SPACE_XS,
-    SPACE_XXL,
     SPACE_XXS,
     SPACE_XXXS,
 )
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
+from frontend.styles._form_rows import make_labeled_row, make_pill, make_section_divider
+from frontend.styles.page_styles import section_kicker_style
 
 
-_STYLESHEET = f"""
-QWidget {{
-    color: {_TEXT_PRI};
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-    font-size: {FONT_SIZE_BODY}px;
-    background-color: transparent;
-}}
+_STYLESHEET = (
+    page_base_styles(FONT_SIZE_BODY)
+    + f"""
 {_FORM_INPUTS}
 {_FORM_COMBO}
 QScrollArea {{ border: none; background-color: transparent; }}
@@ -115,14 +94,11 @@ QLabel {{ background: transparent; }}
 QFormLayout QLabel {{ color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_NORMAL}; }}
 QDialog {{ background-color: {_BG_SURFACE}; }}
 """
+)
 
 
 def _pill(text: str, fg: str, bg: str) -> QLabel:
-    lbl = QLabel(text)
-    lbl.setFixedHeight(SIZE_PILL_H)
-    lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-    lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
-    lbl.setStyleSheet(f"""
+    return make_pill(text, SIZE_PILL_H, f"""
         color: {fg};
         background-color: {bg};
         border: none;
@@ -132,7 +108,6 @@ def _pill(text: str, fg: str, bg: str) -> QLabel:
         font-weight: {FONT_WEIGHT_BOLD};
         letter-spacing: 0.{SPACE_5}px;
     """)
-    return lbl
 
 
 def _combo_ss() -> str:
@@ -140,50 +115,44 @@ def _combo_ss() -> str:
 
 
 def _make_sdiv(title: str) -> QFrame:
-    fr = QFrame()
-    fr.setFixedHeight(SIZE_SECTION_H)
-    fr.setStyleSheet(f"""
+    return make_section_divider(
+        title,
+        f"""
         QFrame {{
             background:{_BG_RAISED};
             border-top:{SPACE_XXXS}px solid {_BORDER};
             border-bottom:{SPACE_XXXS}px solid {_BORDER};
         }}
-    """)
-    row = QHBoxLayout(fr)
-    row.setContentsMargins(SPACE_XL, 0, SPACE_LG, 0)
-    lbl = QLabel(title.upper())
-    lbl.setStyleSheet(
-        f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_MICRO}px; font-weight:{FONT_WEIGHT_HEAVY};"
-        f"letter-spacing:{SPACE_XXS}px; background:transparent;"
+    """,
+        (
+            f"{section_kicker_style(_TEXT_SEC)} background:transparent;"
+        ),
+        margins=(SPACE_XL, 0, SPACE_LG, 0),
+        fixed_height=SIZE_SECTION_H,
     )
-    row.addWidget(lbl)
-    row.addStretch()
-    return fr
 
 
 def _srow(label_text: str, widget: QWidget, height: int = SIZE_ROW_52) -> QFrame:
-    fr = QFrame()
-    fr.setFixedHeight(height)
-    fr.setStyleSheet(f"""
+    return make_labeled_row(
+        label_text,
+        widget,
+        height=height,
+        frame_style=f"""
         QFrame {{
             background:transparent;
             border:none;
             border-bottom:{SPACE_XXXS}px solid {_BORDER_DIM};
         }}
         QFrame:hover {{ background:{_ACCENT_HI_BG_03}; }}
-    """)
-    row = QHBoxLayout(fr)
-    row.setContentsMargins(SPACE_XL, 0, SPACE_XL, 0)
-    row.setSpacing(SPACE_20)
-    lb = QLabel(label_text)
-    lb.setFixedWidth(SIZE_LABEL_W)
-    lb.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-    lb.setStyleSheet(
-        f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px; font-weight:{FONT_WEIGHT_NORMAL};background:transparent; border:none;"
+    """,
+        label_style=(
+            f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px; font-weight:{FONT_WEIGHT_NORMAL};"
+            "background:transparent; border:none;"
+        ),
+        label_width=SIZE_LABEL_W,
+        margins=(SPACE_XL, 0, SPACE_XL, 0),
+        spacing=SPACE_20,
     )
-    row.addWidget(lb)
-    row.addWidget(widget, stretch=1)
-    return fr
 
 
 def _make_banner(text: str, dot_color: str, bg: str, border: str) -> QFrame:

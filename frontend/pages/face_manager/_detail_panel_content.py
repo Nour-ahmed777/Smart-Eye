@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PySide6.QtCore import Qt, QRegularExpression
 from PySide6.QtGui import QFont
@@ -20,8 +20,6 @@ from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.styles._colors import (
     _ACCENT_BG_08,
     _ACCENT_HI,
-    _ACCENT_TINT,
-    _ACCENT_TINT_STRONG,
     _BG_RAISED,
     _BORDER,
     _BORDER_DIM,
@@ -38,20 +36,16 @@ from frontend.styles._banner_styles import make_edit_banner
 from frontend.styles._btn_styles import _TEXT_BTN_GHOST
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
-    FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
     FONT_SIZE_MICRO,
     FONT_SIZE_SUBHEAD,
-    FONT_SIZE_TINY,
     FONT_SIZE_XL,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_HEAVY,
     RADIUS_LG,
-    RADIUS_XL,
     SIZE_BTN_W_80,
     SIZE_BTN_W_MD,
     SIZE_CONTROL_MD,
-    SIZE_CONTROL_SM,
     SIZE_FIELD_W_SM,
     SIZE_ICON_64,
     SIZE_LABEL_W_LG,
@@ -190,7 +184,7 @@ def build_face_content(panel, face: dict, layout: QVBoxLayout) -> None:
             fm = get_face_model()
             if fm and getattr(fm, "model_name", ""):
                 emb_model = fm.model_name
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             emb_model = ""
     if emb_model:
         model_badge = QLabel(emb_model)
@@ -387,3 +381,4 @@ def build_face_content(panel, face: dict, layout: QVBoxLayout) -> None:
     action_row.addWidget(panel._edit_btn)
 
     layout.addLayout(action_row)
+

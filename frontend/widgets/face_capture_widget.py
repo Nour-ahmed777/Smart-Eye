@@ -1,4 +1,5 @@
 import contextlib
+import logging
 
 import cv2
 from PySide6.QtCore import Qt, QRect, QTimer, Signal
@@ -69,6 +70,7 @@ from frontend.ui_tokens import (
     SPACE_XXS,
     SPACE_XXXS,
 )
+from frontend.styles.page_styles import muted_label_style, text_style
 
 _BTN_BLUE = f"""
 QPushButton {{
@@ -130,6 +132,7 @@ QPushButton:pressed {{ background: {_SUCCESS_PRESSED_ALT}; }}
 """
 
 _AUTO_CAPTURE_FRAMES = 45
+logger = logging.getLogger(__name__)
 
 
 class FaceCaptureWidget(QWidget):
@@ -194,12 +197,12 @@ class FaceCaptureWidget(QWidget):
         inst_font.setBold(True)
         self._instruction_label.setFont(inst_font)
         self._instruction_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
-        self._instruction_label.setStyleSheet(f"color: {_ACCENT_HI}; background: transparent; padding: {SPACE_XXS}px;")
+        self._instruction_label.setStyleSheet(text_style(_ACCENT_HI, extra=f"background: transparent; padding: {SPACE_XXS}px;"))
         info_row.addStretch(1)
 
         self._status_label = QLabel("● Camera Off")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
-        self._status_label.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px; background: transparent;")
+        self._status_label.setStyleSheet(muted_label_style(size=FONT_SIZE_LABEL) + " background: transparent;")
         info_row.addWidget(self._status_label)
         left.addLayout(info_row)
 
@@ -225,7 +228,7 @@ class FaceCaptureWidget(QWidget):
         action_row.addWidget(self._auto_btn)
 
         sep = QLabel("|")
-        sep.setStyleSheet(f"color: {_BORDER}; background: transparent; padding: 0 {SPACE_XXS}px;")
+        sep.setStyleSheet("color: {c}; background: transparent; padding: 0 {pad}px;".format(c=_BORDER, pad=SPACE_XXS))
         action_row.addWidget(sep)
 
         self._capture_btn = QPushButton("Capture")
@@ -252,13 +255,13 @@ class FaceCaptureWidget(QWidget):
         right_frame = QFrame()
         right_frame.setObjectName("thumbPanel")
         right_frame.setFixedWidth(SIZE_PANEL_W_MD)
-        right_frame.setStyleSheet(f"""
+        right_frame.setStyleSheet("""
             QFrame#thumbPanel {{
-                background-color: {_BG_RAISED};
-                border: {SPACE_XXXS}px solid {_BORDER_DIM};
-                border-radius: {RADIUS_SM}px;
+                background-color: {bg};
+                border: {bw}px solid {border};
+                border-radius: {radius}px;
             }}
-        """)
+        """.format(bg=_BG_RAISED, bw=SPACE_XXXS, border=_BORDER_DIM, radius=RADIUS_SM))
         right = QVBoxLayout(right_frame)
         right.setContentsMargins(SPACE_10, SPACE_10, SPACE_10, SPACE_10)
         right.setSpacing(SPACE_SM)
@@ -269,31 +272,31 @@ class FaceCaptureWidget(QWidget):
         )
         right.addWidget(prog_lbl)
         self._progress_label = QLabel("0 / 4 captured")
-        self._progress_label.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
+        self._progress_label.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_CAPTION, extra="background: transparent;"))
         right.addWidget(self._progress_label)
 
         self._thumb_labels = []
         for i in range(4):
             thumb_frame = QFrame()
-            thumb_frame.setStyleSheet(f"""
+            thumb_frame.setStyleSheet("""
                 QFrame {{
-                    background-color: {_BG_OVERLAY};
-                    border: {SPACE_XXXS}px solid {_BORDER_DIM};
-                    border-radius: {RADIUS_SM}px;
+                    background-color: {bg};
+                    border: {bw}px solid {border};
+                    border-radius: {radius}px;
                 }}
-            """)
+            """.format(bg=_BG_OVERLAY, bw=SPACE_XXXS, border=_BORDER_DIM, radius=RADIUS_SM))
             thumb_frame.setFixedSize(SIZE_FIELD_W, SIZE_BTN_W_MD)
             thumb_layout = QVBoxLayout(thumb_frame)
             thumb_layout.setContentsMargins(SPACE_XS, SPACE_XS, SPACE_XS, SPACE_XS)
             thumb_layout.setSpacing(SPACE_XXS)
             thumb = QLabel()
             thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            thumb.setStyleSheet(f"background: transparent; border: none; color: {_TEXT_SEC}; font-size: {FONT_SIZE_CAPTION}px;")
+            thumb.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_CAPTION, extra="background: transparent; border: none;"))
             thumb.setText(self.POSES[i])
             thumb.setFixedHeight(SIZE_HEADER_H)
             thumb_layout.addWidget(thumb)
             pose_lbl = QLabel(f"Step {i + 1}: {self.POSES[i]}")
-            pose_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; background: transparent; border: none;")
+            pose_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_MICRO) + " background: transparent; border: none;")
             pose_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             thumb_layout.addWidget(pose_lbl)
             right.addWidget(thumb_frame)
@@ -419,7 +422,7 @@ class FaceCaptureWidget(QWidget):
                     continue
                 try:
                     thread_src = int(thread._source) if str(thread._source).isdigit() else thread._source
-                except Exception:
+                except (TypeError, ValueError):
                     thread_src = thread._source
                 if thread_src == source or str(thread._source) == str(source):
                     thread.frame_ready.connect(self._on_shared_frame)
@@ -427,14 +430,14 @@ class FaceCaptureWidget(QWidget):
                     self._shared_camera_id = cam_id
                     self._timer.stop()
                     self._status_label.setText("● Live (shared)")
-                    self._status_label.setStyleSheet(f"color: {_SUCCESS}; font-size: {FONT_SIZE_LABEL}px; background: transparent;")
+                    self._status_label.setStyleSheet(text_style(_SUCCESS, size=FONT_SIZE_LABEL, extra="background: transparent;"))
                     self._capture_btn.setEnabled(self._current_pose < 4)
                     self._preview_label.setStyleSheet(
                         f"background-color: {_BLACK}; border-radius: {RADIUS_SM}px; border: {SPACE_XXXS}px solid {_SUCCESS_DIM};"
                     )
                     return
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError):
+            logger.debug("Shared camera lookup failed for source=%s", source, exc_info=True)
 
         backends = [cv2.CAP_DSHOW, cv2.CAP_MSMF, cv2.CAP_ANY]
         cap = None
@@ -446,20 +449,20 @@ class FaceCaptureWidget(QWidget):
                     break
                 if c:
                     c.release()
-            except Exception:
+            except (RuntimeError, OSError):
                 pass
         if cap is None:
             with contextlib.suppress(Exception):
                 cap = cv2.VideoCapture(source)
         if cap is None or not cap.isOpened():
             self._status_label.setText("Camera not found")
-            self._status_label.setStyleSheet(f"color: {_DANGER_DIM}; font-size: {FONT_SIZE_LABEL}px; background: transparent;")
+            self._status_label.setStyleSheet(text_style(_DANGER_DIM, size=FONT_SIZE_LABEL, extra="background: transparent;"))
             QMessageBox.warning(self, "Camera Error", f"Could not open camera {source}.\nTry using 'Load from File' instead.")
             return
         self._cap = cap
         self._timer.start(30)
         self._status_label.setText("● Live")
-        self._status_label.setStyleSheet(f"color: {_SUCCESS}; font-size: {FONT_SIZE_LABEL}px; background: transparent;")
+        self._status_label.setStyleSheet(text_style(_SUCCESS, size=FONT_SIZE_LABEL, extra="background: transparent;"))
         self._capture_btn.setEnabled(self._current_pose < 4)
         self._preview_label.setStyleSheet(
             f"background-color: {_BLACK}; border-radius: {RADIUS_SM}px; border: {SPACE_XXXS}px solid {_SUCCESS_DIM};"
@@ -482,8 +485,8 @@ class FaceCaptureWidget(QWidget):
                 if thread:
                     with contextlib.suppress(Exception):
                         thread.frame_ready.disconnect(self._on_shared_frame)
-            except Exception:
-                pass
+            except (ImportError, RuntimeError, OSError):
+                logger.debug("Failed to detach shared frame handler", exc_info=True)
             self._using_shared = False
             self._shared_camera_id = None
 
@@ -497,7 +500,7 @@ class FaceCaptureWidget(QWidget):
         self._detect_cache = (False, False, "")
         self._detect_skip = 0
         self._status_label.setText("● Camera Off")
-        self._status_label.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px; background: transparent;")
+        self._status_label.setStyleSheet(muted_label_style(size=FONT_SIZE_LABEL) + " background: transparent;")
         if self._current_pose < 4:
             self._capture_btn.setEnabled(False)
         if self._last_frame is None:
@@ -669,7 +672,7 @@ class FaceCaptureWidget(QWidget):
             self._instruction_label.setText(self.POSES[self._current_pose])
         else:
             self._instruction_label.setText("All done!")
-            self._instruction_label.setStyleSheet(f"color: {_SUCCESS}; background: transparent; padding: {SPACE_XS}px;")
+            self._instruction_label.setStyleSheet(text_style(_SUCCESS, extra=f"background: transparent; padding: {SPACE_XS}px;"))
             self._capture_btn.setEnabled(False)
             self.stop_camera()
             self.capture_complete.emit(self._captures)
@@ -705,7 +708,7 @@ class FaceCaptureWidget(QWidget):
             self._capture_btn.setEnabled(self._cap is not None or self._using_shared)
         else:
             self._instruction_label.setText("All done!")
-            self._instruction_label.setStyleSheet(f"color: {_SUCCESS}; background: transparent; padding: {SPACE_XS}px;")
+            self._instruction_label.setStyleSheet(text_style(_SUCCESS, extra=f"background: transparent; padding: {SPACE_XS}px;"))
             self._capture_btn.setEnabled(False)
             self.capture_complete.emit(self._captures)
 
@@ -718,7 +721,7 @@ class FaceCaptureWidget(QWidget):
         self._detect_cache = (False, False, "")
         self._detect_skip = 0
         self._instruction_label.setText(self.POSES[0])
-        self._instruction_label.setStyleSheet(f"color: {_ACCENT_HI}; background: transparent; padding: {SPACE_XS}px;")
+        self._instruction_label.setStyleSheet(text_style(_ACCENT_HI, extra=f"background: transparent; padding: {SPACE_XS}px;"))
         self._progress_label.setText("0 / 4 captured")
         camera_active = self._cap is not None or self._using_shared
         self._capture_btn.setEnabled(camera_active)
@@ -738,7 +741,7 @@ class FaceCaptureWidget(QWidget):
 
     def prepend_buttons(self, buttons: list):
         sep = QLabel("|")
-        sep.setStyleSheet(f"color: {_BORDER}; background: transparent; padding: 0 {SPACE_XS}px;")
+        sep.setStyleSheet("color: {c}; background: transparent; padding: 0 {pad}px;".format(c=_BORDER, pad=SPACE_XS))
         for i, btn in enumerate(buttons):
             self._action_row.insertWidget(1 + i, btn)
         self._action_row.insertWidget(1 + len(buttons), sep)

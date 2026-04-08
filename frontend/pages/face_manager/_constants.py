@@ -4,13 +4,14 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter, QPainterPath, QPixmap
+from frontend.app_theme import page_base_styles
 
-from frontend.styles._btn_styles import _TEXT_BTN_BLUE, _TEXT_BTN_RED_DEFAULT, _TEXT_BTN_RED_CONFIRM, _PRIMARY_BTN, _DANGER_BTN
 
 from frontend.styles._colors import (
+    _BG_BASE,
+    _BG_OVERLAY,
     _BG_SURFACE,
     _BG_RAISED,
-    _BG_OVERLAY,
     _BORDER,
     _BORDER_DIM,
     _TEXT_PRI,
@@ -19,10 +20,8 @@ from frontend.styles._colors import (
     _ACCENT,
     _ACCENT_HI,
     _DANGER,
-    _DANGER_DIM,
     _SUCCESS,
-    _BG_BASE,
-    _ACCENT_BG_18,
+    _SUCCESS_DIM,
     _AVATAR_BG_1,
     _AVATAR_BG_2,
     _AVATAR_BG_3,
@@ -46,26 +45,22 @@ from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_LABEL,
     FONT_WEIGHT_NORMAL,
-    RADIUS_MD,
     RADIUS_SM,
-    SIZE_CONTROL_22,
     SIZE_CONTROL_SM,
-    SIZE_CONTROL_XS,
-    SIZE_ICON_10,
-    SIZE_ICON_12,
     SIZE_ICON_TINY,
-    SIZE_ITEM_SM,
-    SPACE_10,
-    SPACE_20,
-    SPACE_28,
-    SPACE_6,
-    SPACE_MD,
     SPACE_SM,
-    SPACE_XS,
-    SPACE_XXS,
     SPACE_XXXS,
 )
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
+from frontend.styles._btn_styles import (
+    _DANGER_BTN,
+    _PRIMARY_BTN,
+    _TEXT_BTN_BLUE,
+    _TEXT_BTN_GHOST,
+    _TEXT_BTN_RED,
+    _TEXT_BTN_RED_CONFIRM,
+    _TEXT_BTN_RED_DEFAULT,
+)
 
 _AVATAR_BG_COLORS = [
     (_AVATAR_BG_1, _AVATAR_BG_2),
@@ -86,13 +81,9 @@ _AVATAR_FG_COLORS = [
 ]
 
 
-_STYLESHEET = f"""
-QWidget {{
-    color: {_TEXT_PRI};
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-    font-size: {FONT_SIZE_BODY}px;
-    background-color: transparent;
-}}
+_STYLESHEET = (
+    page_base_styles(FONT_SIZE_BODY)
+    + f"""
 {_FORM_INPUTS}
 {_FORM_COMBO}
 QScrollArea {{ border: none; background-color: transparent; }}
@@ -119,6 +110,7 @@ QLabel {{ background: transparent; }}
 QFormLayout QLabel {{ color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_NORMAL}; }}
 QDialog {{ background-color: {_BG_SURFACE}; }}
 """
+)
 
 
 def _split_name_parts(full_name: str) -> tuple[str, str, str, str]:

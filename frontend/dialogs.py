@@ -1,0 +1,225 @@
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontMetrics, QIcon
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+    QMessageBox,
+)
+
+from frontend.styles._btn_styles import _DANGER_BTN, _PRIMARY_BTN, _SECONDARY_BTN
+from frontend.styles._colors import (
+    _DANGER,
+    _DANGER_BORDER_SOFT,
+    _DANGER_DIM,
+    _DB_BG_GRAD_2,
+    _DB_BG_GRAD_3,
+    _DB_CANCEL_BG,
+    _DB_CANCEL_BG_ALT,
+    _TEXT_MUTED,
+    _TEXT_ON_ACCENT,
+    _TEXT_PRI,
+    _TEXT_SEC,
+)
+from frontend.styles.page_styles import muted_label_style
+from frontend.ui_tokens import (
+    FONT_SIZE_BODY,
+    FONT_SIZE_MICRO,
+    RADIUS_LG,
+    SIZE_BTN_W_LG,
+    SIZE_CONTROL_MD,
+    SPACE_10,
+    SPACE_20,
+    SPACE_LG,
+    SPACE_MD,
+    SPACE_XL,
+    SPACE_XXXS,
+)
+
+
+_ICON_PATH = "frontend/assets/icons/icon.ico"
+
+
+def _window_icon() -> QIcon:
+    icon = QIcon(_ICON_PATH)
+    return icon
+
+
+def popup_surface_qss() -> str:
+    return f"""
+        QDialog {{
+            background-color: {_DB_BG_GRAD_2};
+            border: {SPACE_XXXS}px solid {_DB_BG_GRAD_3};
+            border-radius: {RADIUS_LG}px;
+        }}
+    """
+
+
+def apply_popup_theme(dlg: QDialog, base_stylesheet: str = "") -> None:
+    flags = dlg.windowFlags() | Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint
+    dlg.setWindowFlags(flags)
+    try:
+        dlg.setWindowIcon(_window_icon())
+    except (RuntimeError, OSError):
+        return
+    qss = popup_surface_qss()
+    dlg.setStyleSheet("{}\n{}".format(base_stylesheet, qss) if base_stylesheet else qss)
+
+
+def _std_icon(dialog: QDialog, icon: QMessageBox.Icon) -> QIcon:
+    style = QApplication.style()
+    if icon == QMessageBox.Icon.Warning:
+        return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning, None, dialog)
+    if icon == QMessageBox.Icon.Critical:
+        return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxCritical, None, dialog)
+    if icon == QMessageBox.Icon.Question:
+        return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxQuestion, None, dialog)
+    return style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation, None, dialog)
+
+
+def _build_dialog(title: str, text: str, icon: QMessageBox.Icon, buttons: list[tuple[str, int]], default_btn: int):
+    dlg = QDialog()
+    dlg.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint)
+    dlg.setWindowModality(Qt.ApplicationModal)
+    dlg.setWindowTitle(title)
+    apply_popup_theme(
+        dlg,
+        f"""
+        QLabel {{
+            color: {_TEXT_PRI};
+            font-size: {FONT_SIZE_BODY}px;
+            background: transparent;
+        }}
+        """,
+    )
+
+    layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(SPACE_XL, SPACE_LG, SPACE_XL, SPACE_LG)
+    layout.setSpacing(SPACE_MD)
+
+    content_row = QHBoxLayout()
+    content_row.setSpacing(SPACE_MD)
+
+    icon_lbl = QLabel()
+    icon_pix = _std_icon(dlg, icon).pixmap(44, 44)
+    icon_lbl.setPixmap(icon_pix)
+    icon_lbl.setFixedSize(44, 44)
+    content_row.addWidget(icon_lbl, alignment=Qt.AlignmentFlag.AlignTop)
+
+    text_wrap = QWidget()
+    text_v = QVBoxLayout(text_wrap)
+    text_v.setContentsMargins(0, 0, 0, 0)
+    text_v.setSpacing(SPACE_10)
+
+    msg_lbl = QLabel(text)
+    msg_lbl.setWordWrap(True)
+    msg_lbl.setStyleSheet(muted_label_style(color=_TEXT_SEC, size=FONT_SIZE_MICRO))
+    text_v.addWidget(msg_lbl)
+
+    content_row.addWidget(text_wrap, stretch=1)
+    layout.addLayout(content_row)
+
+    btn_row = QHBoxLayout()
+    btn_row.addStretch()
+    btn_widgets: dict[int, QPushButton] = {}
+    danger_default = icon in (QMessageBox.Icon.Warning, QMessageBox.Icon.Critical, QMessageBox.Icon.Question)
+    for idx, (label, code) in enumerate(buttons):
+        btn = QPushButton(label)
+        btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
+        if code == default_btn and danger_default:
+            btn.setStyleSheet(_DANGER_BTN)
+        elif code == default_btn:
+            btn.setStyleSheet(_PRIMARY_BTN)
+        else:
+            btn.setStyleSheet(_SECONDARY_BTN)
+        btn.clicked.connect(lambda _=False, c=code: dlg.done(c))
+        btn_row.addWidget(btn)
+        btn_widgets[code] = btn
+    layout.addLayout(btn_row)
+
+    if default_btn in btn_widgets:
+        btn_widgets[default_btn].setFocus()
+
+    try:
+        fm = QFontMetrics(msg_lbl.font())
+        lines = (text or "").splitlines() or [""]
+        max_line = max(fm.horizontalAdvance(line) for line in lines)
+        min_w = max_line + 44 + SPACE_XL * 2 + SPACE_MD * 2
+        dlg.setMinimumWidth(max(360, min_w))
+    except (ValueError, TypeError):
+        pass
+
+    return dlg
+
+
+def _center_on_active(dlg: QDialog) -> None:
+    ref = QApplication.activeWindow()
+    if ref is None:
+        return
+    try:
+        dlg.adjustSize()
+        rect = dlg.frameGeometry()
+        rect.moveCenter(ref.frameGeometry().center())
+        dlg.move(rect.topLeft())
+    except (RuntimeError, AttributeError):
+        pass
+
+
+def _buttons_from_mask(mask: int) -> list[tuple[str, int]]:
+    mapping = [
+        ("Yes", QMessageBox.StandardButton.Yes),
+        ("No", QMessageBox.StandardButton.No),
+        ("Cancel", QMessageBox.StandardButton.Cancel),
+        ("OK", QMessageBox.StandardButton.Ok),
+    ]
+    out: list[tuple[str, int]] = []
+    for label, code in mapping:
+        if mask & code:
+            out.append((label, code))
+    return out or [("OK", QMessageBox.StandardButton.Ok)]
+
+
+def show_info(parent, title, text, buttons=QMessageBox.StandardButton.Ok, default_button=None) -> int:
+    btns = _buttons_from_mask(int(buttons))
+    default_btn = default_button if default_button in {c for _, c in btns} else btns[0][1]
+    dlg = _build_dialog(title, text, QMessageBox.Icon.Information, btns, default_btn)
+    _center_on_active(dlg)
+    return dlg.exec()
+
+
+def show_warning(parent, title, text, buttons=QMessageBox.StandardButton.Ok, default_button=None) -> int:
+    btns = _buttons_from_mask(int(buttons))
+    default_btn = default_button if default_button in {c for _, c in btns} else btns[0][1]
+    dlg = _build_dialog(title, text, QMessageBox.Icon.Warning, btns, default_btn)
+    _center_on_active(dlg)
+    return dlg.exec()
+
+
+def show_error(parent, title, text, buttons=QMessageBox.StandardButton.Ok, default_button=None) -> int:
+    btns = _buttons_from_mask(int(buttons))
+    default_btn = default_button if default_button in {c for _, c in btns} else btns[0][1]
+    dlg = _build_dialog(title, text, QMessageBox.Icon.Critical, btns, default_btn)
+    _center_on_active(dlg)
+    return dlg.exec()
+
+
+def confirm(parent, title, text, buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, default_button=None) -> int:
+    btns = _buttons_from_mask(int(buttons))
+    default_btn = default_button if default_button in {c for _, c in btns} else btns[0][1]
+    dlg = _build_dialog(title, text, QMessageBox.Icon.Question, btns, default_btn)
+    _center_on_active(dlg)
+    return dlg.exec()
+
+
+def patch_messagebox():
+    QMessageBox.information = show_info
+    QMessageBox.warning = show_warning
+    QMessageBox.critical = show_error
+    QMessageBox.question = confirm

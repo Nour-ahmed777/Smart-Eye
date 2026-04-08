@@ -45,6 +45,7 @@ from frontend.ui_tokens import (
     SIZE_LABEL_W_SM,
     SIZE_PANEL_H_LG,
 )
+from frontend.styles.page_styles import divider_style, muted_label_style, text_style, transparent_surface_style
 from utils.system_monitor import get_monitor
 
 logger = logging.getLogger(__name__)
@@ -104,8 +105,12 @@ class MetricRow(QWidget):
         lbl = QLabel(name)
         lbl.setFixedWidth(SIZE_LABEL_W_SM)
         lbl.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD};"
-            f"letter-spacing: 0.{SPACE_6}px; background: transparent;"
+            text_style(
+                _TEXT_MUTED,
+                size=FONT_SIZE_CAPTION,
+                weight=FONT_WEIGHT_BOLD,
+                extra="letter-spacing: 0.{}px; {}".format(SPACE_6, transparent_surface_style()),
+            )
         )
         layout.addWidget(lbl)
 
@@ -115,9 +120,7 @@ class MetricRow(QWidget):
         self._pct = QLabel("0%")
         self._pct.setFixedWidth(SIZE_LABEL_W_SM)
         self._pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._pct.setStyleSheet(
-            f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_SEMIBOLD};background: transparent;"
-        )
+        self._pct.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_CAPTION, weight=FONT_WEIGHT_SEMIBOLD, extra=transparent_surface_style()))
         layout.addWidget(self._pct)
 
     def update_value(self, value: float):
@@ -129,32 +132,36 @@ class MetricRow(QWidget):
             color = _WARNING
         else:
             color = _TEXT_SEC
-        self._pct.setStyleSheet(
-            f"color: {color}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_SEMIBOLD};background: transparent;"
-        )
+        self._pct.setStyleSheet(text_style(color, size=FONT_SIZE_CAPTION, weight=FONT_WEIGHT_SEMIBOLD, extra=transparent_surface_style()))
 
 
 class _Divider(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedHeight(SPACE_XXXS)
-        self.setStyleSheet(f"background: {_BG_OVERLAY};")
+        self.setStyleSheet(divider_style(color=_BG_OVERLAY))
 
 
 class PerformanceWidget(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("PerformanceWidget")
-        self.setStyleSheet(f"""
+        self.setStyleSheet("""
             QFrame#PerformanceWidget {{
-                background-color: {_BG_RAISED};
-                border: {SPACE_XXXS}px solid {_BORDER};
-                border-radius: {RADIUS_XL}px;
+                background-color: {bg};
+                border: {border_w}px solid {border};
+                border-radius: {radius}px;
             }}
             QFrame#PerformanceWidget:hover {{
-                border-color: {_ACCENT_ALT_BG_12};
+                border-color: {hover_border};
             }}
-        """)
+        """.format(
+            bg=_BG_RAISED,
+            border_w=SPACE_XXXS,
+            border=_BORDER,
+            radius=RADIUS_XL,
+            hover_border=_ACCENT_ALT_BG_12,
+        ))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(SIZE_PANEL_H_LG)
 
@@ -170,7 +177,7 @@ class PerformanceWidget(QFrame):
         safe_set_point_size(f, FONT_SIZE_LABEL)
         f.setBold(True)
         title.setFont(f)
-        title.setStyleSheet(f"color: {_TEXT_PRI}; background: transparent;")
+        title.setStyleSheet(text_style(_TEXT_PRI, extra=transparent_surface_style()))
         header.addWidget(title)
         header.addStretch()
 
@@ -179,7 +186,7 @@ class PerformanceWidget(QFrame):
 
         self._inference_label = QLabel("Inference  —")
         self._inference_label.setTextFormat(Qt.TextFormat.RichText)
-        self._inference_label.setStyleSheet(f"font-size: {FONT_SIZE_CAPTION}px; background: transparent; color: {_TEXT_MUTED};")
+        self._inference_label.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION))
         root.addWidget(self._inference_label)
 
         root.addSpacing(SPACE_MD)
@@ -201,7 +208,7 @@ class PerformanceWidget(QFrame):
         self._ram_total = self._get_ram_total()
         self._providers = QLabel("Face recognition: --\nObject detection: --\nRAM: --")
         self._providers.setWordWrap(True)
-        self._providers.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
+        self._providers.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION))
         root.addSpacing(SPACE_6)
         root.addWidget(self._providers)
 
@@ -222,7 +229,7 @@ class PerformanceWidget(QFrame):
             self._cpu.update_value(m.cpu)
             self._ram.update_value(m.ram)
             self._gpu.update_value(m.gpu_load)
-        except Exception:
+        except (AttributeError, RuntimeError, TypeError, ValueError):
             logger.debug("Failed to refresh performance metrics", exc_info=True)
 
     def update_inference(self, face_ms: float, obj_ms: float):
@@ -265,5 +272,5 @@ class PerformanceWidget(QFrame):
             import psutil
 
             return self._format_bytes(psutil.virtual_memory().total)
-        except Exception:
+        except (ImportError, AttributeError, OSError):
             return "Unknown"

@@ -3,11 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QVBoxLayout,
-    QWidget,
 )
 
 from ._constants import (
@@ -18,17 +15,7 @@ from ._constants import (
 )
 from frontend.styles._colors import (
     _ACCENT_BG_10,
-    _ACCENT_BG_12,
-    _ACCENT_BG_15,
     _ACCENT_HI,
-    _ACCENT_HI_BG_45,
-    _ACCENT_HI_BG_70,
-    _ACCENT_HI_BG_78,
-    _BG_BASE,
-    _BG_RAISED,
-    _BG_SURFACE_55,
-    _BORDER,
-    _BORDER_DIM,
     _MUTED_BG_10,
     _SUCCESS,
     _SUCCESS_BG_14,
@@ -45,24 +32,16 @@ from frontend.ui_tokens import (
     FONT_SIZE_MICRO,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_HEAVY,
-    RADIUS_5,
     RADIUS_LG,
-    RADIUS_MD,
     SIZE_BTN_W_62,
-    SIZE_BTN_W_82,
     SIZE_CONTROL_22,
     SIZE_CONTROL_MID,
     SIZE_CONTROL_XS,
     SIZE_ROW_XL,
     SIZE_ICON_64,
-    SIZE_PANEL_SM,
-    SPACE_10,
-    SPACE_3,
     SPACE_6,
     SPACE_SM,
     SPACE_XXS,
-    SPACE_XXXS,
-    SPACE_MD,
 )
 from frontend.widgets.base.roster_card_base import (
     apply_roster_card_style,

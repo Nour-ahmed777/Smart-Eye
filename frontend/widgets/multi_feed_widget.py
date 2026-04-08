@@ -48,7 +48,7 @@ class MultiFeedWidget(QWidget):
 
         try:
             self._grid_size = int(size)
-        except Exception:
+        except (TypeError, ValueError):
             logger.debug("Invalid grid size provided: %r", size, exc_info=True)
             self._grid_size = 0
         self._rearrange()

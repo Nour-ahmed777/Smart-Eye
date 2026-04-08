@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QFont, QPixmap
@@ -21,24 +22,22 @@ from PySide6.QtWidgets import (
 from backend.repository import db
 from frontend.services.rules_service import RulesService
 from frontend.app_theme import safe_set_point_size
+from frontend.dialogs import apply_popup_theme
 
 from frontend.styles._colors import _ACCENT_BG_22, _MUTED_BG_25
 from frontend.styles._btn_styles import _SECONDARY_BTN, _SEGMENT_TAB_BAR, _SEGMENT_TAB_BTN
 from frontend.styles._input_styles import _SEARCH_INPUT
-from frontend.styles.page_styles import header_bar_style, splitter_handle_style, toolbar_style
+from frontend.styles.page_styles import header_bar_style, splitter_handle_style, text_style, toolbar_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_9,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
     FONT_SIZE_HEADING,
-    FONT_SIZE_LABEL,
     FONT_SIZE_LARGE,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_SEMIBOLD,
-    RADIUS_6,
-    RADIUS_9,
     RADIUS_MD,
     SIZE_BTN_W_LG,
     SIZE_CONTROL_30,
@@ -49,7 +48,6 @@ from frontend.ui_tokens import (
     SIZE_ICON_SM,
     SIZE_PANEL_MAX,
     SIZE_PANEL_MIN,
-    SIZE_PILL_H,
     SIZE_ROW_MD,
     SIZE_SECTION_TALL,
     SPACE_10,
@@ -67,12 +65,9 @@ from frontend.ui_tokens import (
     SPACE_XXXS,
 )
 from ._constants import (
-    _ACCENT,
     _ACCENT_HI,
     _BG_BASE,
     _BG_SURFACE,
-    _BG_OVERLAY,
-    _BORDER,
     _BORDER_DIM,
     _DANGER,
     _PRIMARY_BTN,
@@ -87,6 +82,28 @@ from ._detail_panel import RuleDetailPanel
 from ._forms import NewRulePanel
 from ._widgets import RuleCard
 
+logger = logging.getLogger(__name__)
+_TITLE_STYLE = text_style(_TEXT_PRI, extra="background: transparent; border: none; padding: 0;")
+_SEARCH_ICON_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_15, extra="background: transparent;")
+_BG_BASE_STYLE = f"background-color: {_BG_BASE};"
+_SCROLL_BASE_STYLE = f"border: none; background: {_BG_BASE};"
+_DETAIL_PANEL_BG_STYLE = f"background-color: {_BG_SURFACE};"
+_TAB_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_CAPTION, weight=FONT_WEIGHT_SEMIBOLD, extra="background: transparent;")
+_COUNT_BADGE_INACTIVE_STYLE = (
+    f"background: {_MUTED_BG_25}; color: {_TEXT_MUTED}; "
+    f"border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px; "
+    f"font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;"
+)
+_COUNT_BADGE_ACTIVE_STYLE = (
+    f"background: {_ACCENT_BG_22}; color: {_ACCENT_HI}; "
+    f"border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px; "
+    f"font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;"
+)
+_EMPTY_TITLE_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_BOLD)
+_EMPTY_SUB_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_CAPTION)
+_SIM_TITLE_STYLE = text_style(_TEXT_PRI, size=FONT_SIZE_HEADING, weight=FONT_WEIGHT_BOLD)
+_SIM_LABEL_STYLE = text_style(_TEXT_SEC)
+_SIM_RESULT_STYLE = text_style(_TEXT_SEC, extra=f"background: transparent; padding: {SPACE_10}px;")
 
 class RulesManagerPage(QWidget):
     def __init__(self, parent=None, rules_service: RulesService | None = None):
@@ -129,7 +146,7 @@ class RulesManagerPage(QWidget):
         safe_set_point_size(tf, FONT_SIZE_LARGE)
         tf.setBold(True)
         title.setFont(tf)
-        title.setStyleSheet(f"color: {_TEXT_PRI}; background: transparent; border: none; padding: 0;")
+        title.setStyleSheet(_TITLE_STYLE)
         hl.addWidget(title)
         hl.addStretch()
 
@@ -152,7 +169,7 @@ class RulesManagerPage(QWidget):
         self._splitter.setStyleSheet(splitter_handle_style(color=_BORDER_DIM, width=SPACE_XXXS))
 
         left_panel = QWidget()
-        left_panel.setStyleSheet(f"background-color: {_BG_BASE};")
+        left_panel.setStyleSheet(_BG_BASE_STYLE)
         left_panel.setMinimumWidth(SIZE_PANEL_MIN)
         left_panel.setMaximumWidth(SIZE_PANEL_MAX)
         ll = QVBoxLayout(left_panel)
@@ -170,7 +187,7 @@ class RulesManagerPage(QWidget):
         sicon = QLabel("⌕")
         sicon.setFixedWidth(SIZE_ICON_SM)
         sicon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sicon.setStyleSheet(f"color: {_TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_15}px;")
+        sicon.setStyleSheet(_SEARCH_ICON_STYLE)
         search_row.addWidget(sicon)
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("Search rules…")
@@ -201,15 +218,11 @@ class RulesManagerPage(QWidget):
             bi.setSpacing(SPACE_XS)
             bi.setAlignment(Qt.AlignmentFlag.AlignCenter)
             txt = QLabel(label)
-            txt.setStyleSheet(f"background: transparent; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+            txt.setStyleSheet(_TAB_LABEL_STYLE)
             txt.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             bi.addWidget(txt)
             cnt = QLabel("0")
-            cnt.setStyleSheet(f"""
-                background: {_MUTED_BG_25}; color: {_TEXT_MUTED};
-                border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px;
-                font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;
-            """)
+            cnt.setStyleSheet(_COUNT_BADGE_INACTIVE_STYLE)
             cnt.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cnt.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
             bi.addWidget(cnt)
@@ -225,9 +238,9 @@ class RulesManagerPage(QWidget):
         self._roster_scroll = QScrollArea()
         self._roster_scroll.setWidgetResizable(True)
         self._roster_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._roster_scroll.setStyleSheet(f"border: none; background: {_BG_BASE};")
+        self._roster_scroll.setStyleSheet(_SCROLL_BASE_STYLE)
         self._roster_container = QWidget()
-        self._roster_container.setStyleSheet(f"background: {_BG_BASE};")
+        self._roster_container.setStyleSheet(_BG_BASE_STYLE)
         self._roster_vbox = QVBoxLayout(self._roster_container)
         self._roster_vbox.setContentsMargins(SPACE_SM, SPACE_SM, SPACE_SM, SPACE_SM)
         self._roster_vbox.setSpacing(SPACE_6)
@@ -236,7 +249,7 @@ class RulesManagerPage(QWidget):
         ll.addWidget(self._roster_scroll, stretch=1)
 
         self._detail_panel = RuleDetailPanel(rules_service=self._rules_service)
-        self._detail_panel.setStyleSheet(f"background-color: {_BG_SURFACE};")
+        self._detail_panel.setStyleSheet(_DETAIL_PANEL_BG_STYLE)
         self._detail_panel.delete_requested.connect(self._delete_rule)
         self._detail_panel.saved.connect(self._on_rule_saved)
         self._detail_panel.close_requested.connect(self._close_detail)
@@ -297,17 +310,9 @@ class RulesManagerPage(QWidget):
     def _update_tab_count_styles(self):
         for key, lbl in self._tab_counts.items():
             if self._tab_buttons.get(key, None) and self._tab_buttons[key].isChecked():
-                lbl.setStyleSheet(f"""
-                    background: {_ACCENT_BG_22}; color: {_ACCENT_HI};
-                    border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px;
-                    font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;
-                """)
+                lbl.setStyleSheet(_COUNT_BADGE_ACTIVE_STYLE)
             else:
-                lbl.setStyleSheet(f"""
-                    background: {_MUTED_BG_25}; color: {_TEXT_MUTED};
-                    border-radius: {RADIUS_MD}px; padding: 0 {SPACE_5}px;
-                    font-size: {FONT_SIZE_9}px; font-weight: {FONT_WEIGHT_HEAVY}; min-width: {SPACE_LG}px;
-                """)
+                lbl.setStyleSheet(_COUNT_BADGE_INACTIVE_STYLE)
 
     def _apply_filter_and_search(self):
         text = self._search_edit.text().lower().strip()
@@ -346,14 +351,14 @@ class RulesManagerPage(QWidget):
             has_search = bool(self._search_edit.text().strip())
             title = QLabel("No results" if (has_search or has_filter) else "No rules yet")
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            title.setStyleSheet(f"font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_BOLD}; color: {_TEXT_SEC};")
+            title.setStyleSheet(_EMPTY_TITLE_STYLE)
             el.addWidget(title)
             sub = QLabel(
                 "Try adjusting your search or filter." if (has_search or has_filter) else "Click '+  Add Rule' to create your first rule."
             )
             sub.setWordWrap(True)
             sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            sub.setStyleSheet(f"font-size: {FONT_SIZE_CAPTION}px; color: {_TEXT_MUTED};")
+            sub.setStyleSheet(_EMPTY_SUB_STYLE)
             el.addWidget(sub)
             self._roster_vbox.addWidget(empty_w)
             return
@@ -395,7 +400,7 @@ class RulesManagerPage(QWidget):
     def _open_new_rule_panel(self):
         if self._new_rule_panel is None:
             self._new_rule_panel = NewRulePanel(self._rules_service)
-            self._new_rule_panel.setStyleSheet(_STYLESHEET + f"background-color: {_BG_SURFACE};")
+            self._new_rule_panel.setStyleSheet(_STYLESHEET + _DETAIL_PANEL_BG_STYLE)
             self._new_rule_panel.saved.connect(self._on_new_rule_saved)
             self._new_rule_panel.close_requested.connect(self._close_new_rule_panel)
             self._right_stack.addWidget(self._new_rule_panel)
@@ -432,25 +437,25 @@ class RulesManagerPage(QWidget):
             from backend.pipeline.alarm_handler import stop_all_sounds
 
             stop_all_sounds()
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError):
+            logger.warning("Failed to stop alarm sounds", exc_info=True)
 
     def _simulate_dialog(self):
         dlg = QDialog(self)
         dlg.setWindowTitle("Simulate Rule")
         dlg.setMinimumSize(500, 400)
-        dlg.setStyleSheet(_STYLESHEET)
+        apply_popup_theme(dlg, _STYLESHEET)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(SPACE_XL, SPACE_20, SPACE_XL, SPACE_20)
         layout.setSpacing(SPACE_14)
 
         title_lbl = QLabel("Simulate Rule")
-        title_lbl.setStyleSheet(f"color: {_TEXT_PRI}; font-size: {FONT_SIZE_HEADING}px; font-weight: {FONT_WEIGHT_BOLD};")
+        title_lbl.setStyleSheet(_SIM_TITLE_STYLE)
         layout.addWidget(title_lbl)
         layout.addWidget(_make_separator())
 
         lbl = QLabel("Select a rule and a detection log to test:")
-        lbl.setStyleSheet(f"color: {_TEXT_SEC};")
+        lbl.setStyleSheet(_SIM_LABEL_STYLE)
         layout.addWidget(lbl)
 
         rule_combo = QComboBox()
@@ -466,7 +471,7 @@ class RulesManagerPage(QWidget):
 
         result_label = QLabel("")
         result_label.setWordWrap(True)
-        result_label.setStyleSheet(f"background: transparent; padding: {SPACE_10}px; color: {_TEXT_SEC};")
+        result_label.setStyleSheet(_SIM_RESULT_STYLE)
         layout.addWidget(result_label)
 
         def run_sim():
@@ -482,20 +487,28 @@ class RulesManagerPage(QWidget):
             text += "\n".join(details) if isinstance(details, list) else str(details)
             result_label.setText(text)
             result_label.setStyleSheet(
-                f"color: {_SUCCESS if passed else _DANGER}; background: transparent; padding: {SPACE_10}px; font-size: {FONT_SIZE_BODY}px;"
+                text_style(
+                    _SUCCESS if passed else _DANGER,
+                    size=FONT_SIZE_BODY,
+                    extra=f"background: transparent; padding: {SPACE_10}px;",
+                )
             )
 
         sim_btn = QPushButton("Run Simulation")
         sim_btn.setStyleSheet(_PRIMARY_BTN)
-        sim_btn.setFixedHeight(SIZE_ROW_MD)
+        sim_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
         sim_btn.clicked.connect(run_sim)
-        layout.addWidget(sim_btn)
         layout.addStretch()
 
         close_btn = QPushButton("Close")
         close_btn.setStyleSheet(_SECONDARY_BTN)
-        close_btn.setFixedHeight(SIZE_ROW_MD)
+        close_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
         close_btn.clicked.connect(dlg.accept)
-        layout.addWidget(close_btn)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.setSpacing(SPACE_SM)
+        btn_row.addWidget(sim_btn)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
 
         dlg.exec()

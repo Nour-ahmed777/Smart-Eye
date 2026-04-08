@@ -4,11 +4,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
-    QWidget,
     QLabel,
     QSizePolicy,
-    QVBoxLayout,
 )
 
 from backend.repository import db
@@ -23,25 +20,12 @@ from frontend.ui_tokens import (
     SPACE_6,
     SIZE_CONTROL_22,
     SIZE_CONTROL_MID,
-    SIZE_ROW_XL,
     SPACE_3,
-    SPACE_10,
-    SPACE_MD,
-    SPACE_XXXS,
 )
 from frontend.styles._colors import (
-    _ACCENT,
     _ACCENT_BG_12,
-    _ACCENT_BG_15,
     _ACCENT_HI,
-    _ACCENT_HI_BG_45,
-    _ACCENT_HI_BG_70,
-    _ACCENT_HI_BG_78,
-    _BG_RAISED,
-    _BG_SURFACE,
-    _BORDER,
     _PURPLE,
-    _PURPLE_DIM,
     _PURPLE_BG_12,
     _TEXT_MUTED,
     _TEXT_PRI,

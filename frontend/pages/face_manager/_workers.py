@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import uuid
@@ -59,7 +59,7 @@ class EnrollWorker(QThread):
             for img in self._images:
                 try:
                     emb = model.get_embedding(img)
-                except Exception:
+                except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                     emb = None
                 if emb is not None:
                     embeddings.append(emb)
@@ -79,7 +79,7 @@ class EnrollWorker(QThread):
 
             try:
                 emb_bytes = embedding_to_bytes(avg)
-            except Exception as e:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as e:
                 self.done.emit(False, f"Failed to convert embedding: {e}")
                 return
 
@@ -111,5 +111,6 @@ class EnrollWorker(QThread):
                 True,
                 f"Successfully enrolled {self._name} with {len(embeddings)} sample(s).",
             )
-        except Exception as e:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as e:
             self.done.emit(False, str(e))
+

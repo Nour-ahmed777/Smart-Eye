@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -246,7 +246,7 @@ class SettingsPage(QWidget):
             with open(path, "w") as fh:
                 json.dump(settings, fh, indent=2)
             QMessageBox.information(self, "Exported", f"Settings saved to:\n{path}")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
 
     def _import_settings(self) -> None:
@@ -259,5 +259,6 @@ class SettingsPage(QWidget):
             db.import_settings(settings)
             self._load_all()
             QMessageBox.information(self, "Imported", "Settings imported successfully.")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
+

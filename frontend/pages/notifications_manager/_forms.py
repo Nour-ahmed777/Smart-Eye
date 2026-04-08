@@ -1,7 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+
+import logging
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -20,9 +21,11 @@ from shiboken6 import isValid
 from backend.repository import db
 from backend.notifications.email_notifier import test_email
 from backend.notifications.webhook_notifier import test_webhook
-from frontend.app_theme import safe_set_point_size
 from frontend.styles._hero_header import make_hero_header
 from frontend.styles._banner_styles import make_edit_banner
+from frontend.styles._btn_styles import _SECONDARY_BTN
+from frontend.styles.page_styles import divider_style, muted_label_style, section_kicker_style, text_style, transparent_surface_style
+from frontend.widgets.toast import show_toast
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
 
@@ -33,18 +36,15 @@ from frontend.styles._colors import (
     _ACCENT_BG_12,
     _ACCENT_HI,
     _ACCENT_HI_BG_18,
-    _BG_OVERLAY,
     _BG_RAISED,
     _BG_SURFACE,
     _BORDER,
     _BORDER_DIM,
-    _SUCCESS,
     _TEXT_MUTED,
     _TEXT_PRI,
     _TEXT_SEC,
 )
 from frontend.ui_tokens import (
-    FONT_SIZE_15,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
@@ -52,7 +52,6 @@ from frontend.ui_tokens import (
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_NORMAL,
     RADIUS_6,
-    RADIUS_9,
     RADIUS_LG,
     SIZE_BTN_W_54,
     SIZE_BTN_W_72,
@@ -60,7 +59,6 @@ from frontend.ui_tokens import (
     SIZE_BTN_W_MD,
     SIZE_BTN_W_SM,
     SIZE_BTN_W_80,
-    SIZE_BADGE_H,
     SIZE_CONTROL_MD,
     SIZE_CONTROL_SM,
     SIZE_ITEM_SM,
@@ -69,7 +67,6 @@ from frontend.ui_tokens import (
     SIZE_ROW_72,
     SPACE_LG,
     SPACE_10,
-    SPACE_14,
     SPACE_XXS,
     SPACE_20,
     SPACE_3,
@@ -83,7 +80,6 @@ from frontend.ui_tokens import (
 from ._constants import (
     _PRIMARY_BTN,
     _TEXT_BTN_BLUE,
-    _TEXT_BTN_GHOST,
     _TEXT_BTN_RED,
     _TEXT_BTN_RED_CONFIRM,
     _combo_ss,
@@ -92,6 +88,11 @@ from ._constants import (
     _srow,
 )
 
+logger = logging.getLogger(__name__)
+_SURFACE_BG_STYLE = f"background:{_BG_SURFACE};"
+_SCROLL_SURFACE_STYLE = f"QScrollArea {{ border:none; background:{_BG_SURFACE}; }}"
+_TLS_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_LABEL, extra="background:transparent;")
+_MUTED_CAPTION_STYLE = muted_label_style(size=FONT_SIZE_CAPTION)
 
 class SmtpPanel(QWidget):
     close_requested = Signal()
@@ -118,9 +119,9 @@ class SmtpPanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(f"QScrollArea {{ border:none; background:{_BG_SURFACE}; }}")
+        scroll.setStyleSheet(_SCROLL_SURFACE_STYLE)
         body = QWidget()
-        body.setStyleSheet(f"background:{_BG_SURFACE};")
+        body.setStyleSheet(_SURFACE_BG_STYLE)
         body_l = QVBoxLayout(body)
         body_l.setContentsMargins(0, 0, 0, SPACE_XXL)
         body_l.setSpacing(0)
@@ -145,7 +146,7 @@ class SmtpPanel(QWidget):
         self._smtp_tls = ToggleSwitch()
         self._smtp_tls.setChecked(True)
         tls_lbl = QLabel("Use TLS / STARTTLS")
-        tls_lbl.setStyleSheet(f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px; background:transparent;")
+        tls_lbl.setStyleSheet(_TLS_LABEL_STYLE)
         pt.addWidget(self._smtp_port)
         pt.addWidget(self._smtp_tls)
         pt.addWidget(tls_lbl)
@@ -192,7 +193,7 @@ class SmtpPanel(QWidget):
         hl = QVBoxLayout(hint_fr)
         hl.setContentsMargins(SPACE_XL, SPACE_10, SPACE_XL, SPACE_10)
         hint = QLabel("Tip: for Gmail use an <b>App Password</b> (Google Account \u2192 Security \u2192 App Passwords).")
-        hint.setStyleSheet(f"color:{_TEXT_MUTED}; font-size:{FONT_SIZE_CAPTION}px;")
+        hint.setStyleSheet(_MUTED_CAPTION_STYLE)
         hint.setWordWrap(True)
         hl.addWidget(hint)
         body_l.addWidget(hint_fr)
@@ -200,18 +201,18 @@ class SmtpPanel(QWidget):
 
         div = QFrame()
         div.setFrameShape(QFrame.Shape.HLine)
-        div.setStyleSheet(f"background:{_BORDER_DIM}; border:none; max-height:{SPACE_XXXS}px;")
+        div.setStyleSheet(divider_style(_BORDER_DIM))
         root.addWidget(div)
 
         test_btn = QPushButton("Send Test Email")
         test_btn.setFixedHeight(SIZE_CONTROL_MD)
-        test_btn.setStyleSheet(_TEXT_BTN_GHOST)
+        test_btn.setStyleSheet(_SECONDARY_BTN)
         test_btn.clicked.connect(self._test_smtp)
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setFixedHeight(SIZE_CONTROL_MD)
         cancel_btn.setFixedWidth(SIZE_BTN_W_SM)
-        cancel_btn.setStyleSheet(_TEXT_BTN_GHOST)
+        cancel_btn.setStyleSheet(_SECONDARY_BTN)
         cancel_btn.clicked.connect(self.close_requested.emit)
 
         save_btn = QPushButton("Save")
@@ -273,7 +274,10 @@ class SmtpPanel(QWidget):
                     "Send Failed",
                     "Could not send the test email.\nVerify host / port / credentials and ensure the settings are saved.",
                 )
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
+            logger.exception("Unexpected SMTP test failure")
             QMessageBox.critical(self, "Error", str(exc))
 
 
@@ -315,13 +319,13 @@ class ProfilePanel(QWidget):
 
         t = QLabel("No profile selected")
         t.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        t.setStyleSheet(f"font-size:{FONT_SIZE_BODY}px; font-weight:{FONT_WEIGHT_BOLD}; color:{_TEXT_SEC}; background:transparent;")
+        t.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_BOLD, extra="background:transparent;"))
         wl.addWidget(t)
 
         s = QLabel("Select a profile from the list to edit it,\nor click  '+  Add Profile'  to create a new one.")
         s.setWordWrap(True)
         s.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        s.setStyleSheet(f"font-size:{FONT_SIZE_CAPTION}px; color:{_TEXT_MUTED}; background:transparent;")
+        s.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION) + " background:transparent;")
         wl.addWidget(s)
 
         lay.addWidget(wrap)
@@ -382,9 +386,9 @@ class ProfilePanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(f"QScrollArea {{ border:none; background:{_BG_SURFACE}; }}")
+        scroll.setStyleSheet(_SCROLL_SURFACE_STYLE)
         body = QWidget()
-        body.setStyleSheet(f"background:{_BG_SURFACE};")
+        body.setStyleSheet(_SURFACE_BG_STYLE)
         body_l = QVBoxLayout(body)
         body_l.setContentsMargins(0, 0, 0, SPACE_XXL)
         body_l.setSpacing(0)
@@ -402,7 +406,7 @@ class ProfilePanel(QWidget):
                 r.setSpacing(SPACE_10)
                 lb = QLabel(f"{label}:")
                 lb.setFixedWidth(SIZE_LABEL_W)
-                lb.setStyleSheet(f"color:{_TEXT_SEC};font-size:{FONT_SIZE_LABEL}px;")
+                lb.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_LABEL))
                 r.addWidget(lb)
                 vl = QLabel(value if value else "—")
                 vl.setStyleSheet(
@@ -417,7 +421,7 @@ class ProfilePanel(QWidget):
             def _div():
                 d = QFrame()
                 d.setFrameShape(QFrame.Shape.HLine)
-                d.setStyleSheet(f"background:{_BORDER_DIM};border:none;max-height:{SPACE_XXXS}px;")
+                d.setStyleSheet(divider_style(_BORDER_DIM))
                 return d
 
             def _section(title: str):
@@ -427,13 +431,11 @@ class ProfilePanel(QWidget):
                 r.setContentsMargins(SPACE_XL, SPACE_SM, SPACE_XL, SPACE_XXS)
                 r.setSpacing(SPACE_SM)
                 lb = QLabel(title.upper())
-                lb.setStyleSheet(
-                    f"font-size:{FONT_SIZE_MICRO}px;font-weight:{FONT_WEIGHT_BOLD};color:{_TEXT_MUTED};letter-spacing:{SPACE_XXXS}px;"
-                )
+                lb.setStyleSheet(section_kicker_style())
                 r.addWidget(lb)
                 ln = QFrame()
                 ln.setFrameShape(QFrame.Shape.HLine)
-                ln.setStyleSheet(f"background:{_BORDER_DIM};border:none;max-height:{SPACE_XXXS}px;")
+                ln.setStyleSheet(divider_style(_BORDER_DIM))
                 r.addWidget(ln, stretch=1)
                 return c
 
@@ -454,7 +456,13 @@ class ProfilePanel(QWidget):
         else:
             name_fr = QFrame()
             name_fr.setFixedHeight(SIZE_ROW_LG)
-            name_fr.setStyleSheet(f"QFrame{{background:transparent;border:none;border-bottom:{SPACE_XXXS}px solid {_BORDER_DIM};}}")
+            name_fr.setStyleSheet(
+                "QFrame{{{base} border:none;border-bottom:{w}px solid {border};}}".format(
+                    base=transparent_surface_style(),
+                    w=SPACE_XXXS,
+                    border=_BORDER_DIM,
+                )
+            )
             nr = QHBoxLayout(name_fr)
             nr.setContentsMargins(SPACE_XL, SPACE_MD, SPACE_XL, SPACE_MD)
             nr.setSpacing(SPACE_20)
@@ -505,7 +513,7 @@ class ProfilePanel(QWidget):
             self._e_enabled = ToggleSwitch()
             self._e_enabled.setChecked(bool(p.get("enabled", True)))
             elbl = QLabel("Profile is active")
-            elbl.setStyleSheet(f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px; background:transparent;")
+            elbl.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_LABEL, extra="background:transparent;"))
             eh.addWidget(self._e_enabled)
             eh.addWidget(elbl)
             eh.addStretch()
@@ -515,7 +523,7 @@ class ProfilePanel(QWidget):
 
         div = QFrame()
         div.setFrameShape(QFrame.Shape.HLine)
-        div.setStyleSheet(f"background:{_BORDER_DIM}; border:none; max-height:{SPACE_XXXS}px;")
+        div.setStyleSheet(divider_style(_BORDER_DIM))
         root.addWidget(div)
 
         ab = QHBoxLayout()
@@ -534,7 +542,7 @@ class ProfilePanel(QWidget):
         test_btn = QPushButton("Test")
         test_btn.setFixedHeight(SIZE_CONTROL_MD)
         test_btn.setFixedWidth(SIZE_BTN_W_72)
-        test_btn.setStyleSheet(_TEXT_BTN_GHOST)
+        test_btn.setStyleSheet(_SECONDARY_BTN)
         test_btn.setVisible(editing)
         test_btn.clicked.connect(lambda: self._test_profile(p))
         ab.addWidget(test_btn)
@@ -544,14 +552,14 @@ class ProfilePanel(QWidget):
         self._cancel_btn = QPushButton("Cancel")
         self._cancel_btn.setFixedHeight(SIZE_CONTROL_MD)
         self._cancel_btn.setFixedWidth(SIZE_BTN_W_SM)
-        self._cancel_btn.setStyleSheet(_TEXT_BTN_GHOST)
+        self._cancel_btn.setStyleSheet(_SECONDARY_BTN)
         self._cancel_btn.clicked.connect(self.close_requested.emit)
         ab.addWidget(self._cancel_btn)
 
         self._close_btn = QPushButton("Close")
         self._close_btn.setFixedHeight(SIZE_CONTROL_MD)
         self._close_btn.setFixedWidth(SIZE_BTN_W_80)
-        self._close_btn.setStyleSheet(_TEXT_BTN_GHOST)
+        self._close_btn.setStyleSheet(_SECONDARY_BTN)
         self._close_btn.clicked.connect(self.close_requested.emit)
         ab.addWidget(self._close_btn)
 
@@ -666,7 +674,10 @@ class ProfilePanel(QWidget):
                     "Failed",
                     f"Could not send test {ptype} to:\n{target}",
                 )
-        except Exception as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
+            QMessageBox.critical(self, "Error", str(exc))
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
+            logger.exception("Unexpected notification profile test failure")
             QMessageBox.critical(self, "Error", str(exc))
     def _reset_refs(self):
         self._e_name = None
@@ -678,3 +689,4 @@ class ProfilePanel(QWidget):
         self._save_btn = None
         self._cancel_btn = None
         self._close_btn = None
+

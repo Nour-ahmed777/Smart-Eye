@@ -1,1 +1,1 @@
-from ._page import ModelsPage
+from ._page import ModelsPage as ModelsPage

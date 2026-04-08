@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import time
 
@@ -31,13 +31,10 @@ from frontend.ui_tokens import (
     FONT_SIZE_9,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
-    FONT_SIZE_LABEL,
     FONT_SIZE_LARGE,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_SEMIBOLD,
-    RADIUS_6,
-    RADIUS_9,
     RADIUS_MD,
     SIZE_BADGE_H,
     SIZE_BTN_W_LG,
@@ -64,12 +61,9 @@ from frontend.ui_tokens import (
     SPACE_XXXS,
 )
 from ._constants import (
-    _ACCENT,
     _ACCENT_HI,
     _BG_BASE,
-    _BG_OVERLAY,
     _BG_SURFACE,
-    _BORDER,
     _BORDER_DIM,
     _PRIMARY_BTN,
     _STYLESHEET,
@@ -438,7 +432,7 @@ class NotificationsConfigPage(QWidget):
     def _suppress_popups(self):
         try:
             QToolTip.hideText()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         self._suppress_popups_until = time.monotonic() + 0.5
 
@@ -458,7 +452,7 @@ class NotificationsConfigPage(QWidget):
                         obj.hide()
                         event.ignore()
                         return True
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 pass
         return super().eventFilter(obj, event)
 
@@ -468,3 +462,4 @@ class NotificationsConfigPage(QWidget):
         self._profile_panel.build_empty()
         self._right_stack.setCurrentIndex(0)
         self._refresh()
+

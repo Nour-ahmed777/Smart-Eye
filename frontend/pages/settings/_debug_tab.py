@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import datetime
 import json
@@ -7,7 +7,7 @@ import contextlib
 import os
 import random
 
-from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPropertyAnimation
+from PySide6.QtCore import Qt, QThread, Signal, QPropertyAnimation
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.services.debug_service import DebugService
-from frontend.widgets.toast import show_toast
 from frontend.styles._colors import _ACCENT_HI_BG_03, _SUCCESS, _TEXT_PRI
 from frontend.ui_tokens import (
     FONT_SIZE_CAPTION,
@@ -40,15 +39,12 @@ from frontend.ui_tokens import (
     SIZE_BTN_W_100,
     SIZE_BTN_W_160,
     SIZE_BTN_W_70,
-    SIZE_CONTROL_30,
     SIZE_FIELD_W_LG,
     SIZE_LABEL_W_XL,
     SIZE_ROW_54,
-    SPACE_10,
     SPACE_20,
     SPACE_6,
     SPACE_MD,
-    SPACE_SM,
     SPACE_XL,
     SPACE_XXXS,
 )
@@ -158,7 +154,7 @@ class _FloodWorker(QThread):
 
             conn.close()
             self.finished.emit(total, os.path.getsize(self._db_path))
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             self.error.emit(str(exc))
 
 
@@ -222,7 +218,7 @@ class _SeedWorker(QThread):
 
             conn.close()
             self.finished.emit(True, f"Inserted {self._count:,} detection log records.")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             self.finished.emit(False, str(exc))
 
 
@@ -243,19 +239,19 @@ class DebugTab(QWidget):
             t = db.get_setting("twitch_enabled", False)
             if self._cb_twitch:
                 self._cb_twitch.setChecked(t in (True, 1, "1", "true", "True"))
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         try:
             h = db.get_setting("http_stream_as_live", False)
             if self._cb_http_live:
                 self._cb_http_live.setChecked(h in (True, 1, "1", "true", "True"))
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         try:
             wt = db.get_setting("debug_window_trace", False)
             if self._cb_win_trace:
                 self._cb_win_trace.setChecked(wt in (True, 1, "1", "true", "True"))
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         try:
             cb = db.get_setting("capture_backends", None)
@@ -263,13 +259,13 @@ class DebugTab(QWidget):
             if isinstance(cb, str):
                 try:
                     cb = json.loads(cb)
-                except Exception:
+                except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                     cb = None
             if isinstance(cb, (list, tuple)) and len(cb) > 0 and cb[0] == "CAP_FFMPEG":
                 ff_first = True
             if self._cb_ffmpeg_first:
                 self._cb_ffmpeg_first.setChecked(ff_first)
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         with contextlib.suppress(Exception):
             db.get_setting("inbox_capture_enabled", False)
@@ -394,7 +390,7 @@ class DebugTab(QWidget):
                 current_backends = json.loads(current_backends)
             if isinstance(current_backends, (list, tuple)):
                 _is_ff_first = len(current_backends) > 0 and current_backends[0] == "CAP_FFMPEG"
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             _is_ff_first = False
         cb3.setChecked(_is_ff_first)
 
@@ -473,7 +469,7 @@ class DebugTab(QWidget):
             else:
                 self._flash_status("Saved")
                 logger.info("Debug settings saved.")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", f"Failed to save debug settings: {exc}")
 
     def _flash_status(self, text: str) -> None:
@@ -716,7 +712,7 @@ class DebugTab(QWidget):
 
         try:
             cam_ids = self._debug_service.ensure_cameras(db.get_conn())
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
             return
 
@@ -741,3 +737,4 @@ class DebugTab(QWidget):
         self._seed_progress.setValue(100)
         self._seed_flood_btn.setText("Flood")
         self._seed_status.setText(f"Done — inserted ~{rows:,} rows, DB is now {_fmt_bytes(final_bytes)}")
+

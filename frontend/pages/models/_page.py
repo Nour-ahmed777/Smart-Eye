@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import contextlib
 import logging
@@ -6,10 +6,12 @@ import os
 import sqlite3
 
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QSettings
-from PySide6.QtGui import QFont, QIcon, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QColorDialog,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -30,19 +32,18 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from backend.pipeline.detector_manager import get_manager, notify_plugins_changed
-from frontend.app_theme import safe_set_point_size
+from frontend.app_theme import page_base_styles, safe_set_point_size
+from frontend.dialogs import apply_popup_theme
 from frontend.widgets.toggle_switch import ToggleSwitch
-from frontend.widgets.toast import show_toast
 from frontend.styles._colors import (
     _ACCENT,
-    _ACCENT_BG_22,
     _ACCENT_HI_BG_28,
     _ACCENT_HI_BG_55,
     _BG_BASE,
-    _BG_OVERLAY,
     _BG_RAISED,
     _BG_SURFACE,
     _BORDER,
+    _BORDER_DARK,
     _BORDER_DIM,
     _CLASS_COLOR_1,
     _CLASS_COLOR_2,
@@ -62,11 +63,22 @@ from frontend.styles._colors import (
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
 from frontend.styles._btn_styles import (
     _PRIMARY_BTN,
+    _SECONDARY_BTN,
     _TEXT_BTN_RED as _RED_TXT_BTN,
     _TAB_BTN as _M_TAB_BTN,
     _TAB_BTN_ACTIVE as _M_TAB_BTN_ACTIVE,
 )
-from frontend.styles.page_styles import header_bar_style, toolbar_style
+from frontend.styles.page_styles import (
+    card_shell_style,
+    divider_style,
+    header_bar_style,
+    muted_label_style,
+    section_kicker_style,
+    text_style,
+    toolbar_style,
+    transparent_surface_style,
+)
+from frontend.styles._form_rows import make_labeled_row, make_section_divider
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
@@ -75,10 +87,8 @@ from frontend.ui_tokens import (
     FONT_SIZE_MICRO,
     FONT_SIZE_SUBHEAD,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_SEMIBOLD,
     RADIUS_6,
-    RADIUS_LG,
     RADIUS_MD,
     RADIUS_SM,
     SIZE_BTN_W_100,
@@ -99,13 +109,9 @@ from frontend.ui_tokens import (
     SIZE_PILL_H,
     SIZE_ROW_48,
     SIZE_ROW_MD,
-    SIZE_SECTION_H,
     SPACE_10,
-    SPACE_14,
-    SPACE_18,
     SPACE_20,
     SPACE_28,
-    SPACE_5,
     SPACE_6,
     SPACE_LG,
     SPACE_MD,
@@ -117,16 +123,20 @@ from frontend.ui_tokens import (
 )
 
 logger = logging.getLogger(__name__)
-_STYLESHEET = f"""
-QWidget {{
-    color: {_TEXT_PRI};
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-    font-size: {FONT_SIZE_BODY}px; background-color: transparent;
-}}
-QLabel {{ background: transparent; }}
+_STYLESHEET = (
+    page_base_styles(FONT_SIZE_BODY)
+    + f"""
 QScrollArea {{ border: none; background: transparent; }}
 {_FORM_INPUTS}
 {_FORM_COMBO}
+QLineEdit#models_field, QComboBox#models_field, QSpinBox#models_field {{
+    background: {_BG_BASE};
+    border: {SPACE_XXXS}px solid {_BORDER_DARK};
+}}
+QLineEdit#models_field:focus, QComboBox#models_field:focus, QSpinBox#models_field:focus {{
+    background: {_BG_SURFACE};
+    border-color: {_ACCENT};
+}}
 QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_SM}px; margin: {SPACE_XXS}px {SPACE_XXXS}px; }}
 QScrollBar::handle:vertical {{
     background: {_ACCENT_HI_BG_28}; min-height: {SPACE_28}px; border-radius: {RADIUS_SM}px;
@@ -144,33 +154,43 @@ QCheckBox::indicator:checked {{
     image: url(frontend/assets/icons/checkmark.png);
 }}
 """
+)
+_BG_BASE_STYLE = f"background: {_BG_BASE};"
+_TITLE_STYLE = text_style(_TEXT_PRI, extra="background: transparent; border: none; padding: 0;")
+_FORM_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_LABEL, weight=FONT_WEIGHT_SEMIBOLD)
+_STATUS_DEFAULT_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_SEMIBOLD)
+_STATUS_OK_STYLE = text_style(_SUCCESS, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_SEMIBOLD)
+_STATUS_ERR_STYLE = text_style(_DANGER, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_SEMIBOLD)
+_STATUS_WARN_STYLE = text_style(_WARNING_ORANGE, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_SEMIBOLD)
+_DOT_DEFAULT_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_LARGE)
+_DOT_OK_STYLE = text_style(_SUCCESS, size=FONT_SIZE_LARGE)
+_DOT_ERR_STYLE = text_style(_DANGER, size=FONT_SIZE_LARGE)
+_DOT_WARN_STYLE = text_style(_WARNING_ORANGE, size=FONT_SIZE_LARGE)
+_PLUGIN_EMPTY_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_LABEL, extra=f"font-style: italic; padding: {SPACE_6}px 0;")
+_SUBMODEL_EMPTY_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_LABEL, extra="font-style: italic;")
 
 
 def _sec_div(title: str) -> QWidget:
-    fr = QWidget()
-    fr.setFixedHeight(SIZE_CONTROL_38)
-    fr.setStyleSheet(f"background: {_BG_BASE};")
-    row = QHBoxLayout(fr)
-    row.setContentsMargins(SPACE_XL, 0, SPACE_LG, 0)
-    lbl = QLabel(title.upper())
-    lbl.setStyleSheet(
-        f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY};"
-        f" letter-spacing: 1.{SPACE_5}px; background: transparent;"
+    return make_section_divider(
+        title,
+        frame_style=f"background: {_BG_BASE};",
+        label_style=f"{section_kicker_style()} background: transparent;",
+        margins=(SPACE_XL, 0, SPACE_LG, 0),
+        fixed_height=SIZE_CONTROL_38,
     )
-    row.addWidget(lbl)
-    row.addStretch()
-    return fr
 
 
-def _field_row(label: str, widget: QWidget, label_w: int = 140) -> QHBoxLayout:
-    row = QHBoxLayout()
-    row.setSpacing(SPACE_MD)
-    lbl = QLabel(label)
-    lbl.setFixedWidth(label_w)
-    lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
-    row.addWidget(lbl)
-    row.addWidget(widget, stretch=1)
-    return row
+def _field_row(label: str, widget: QWidget, label_w: int = 140) -> QWidget:
+    return make_labeled_row(
+        label,
+        widget,
+        height=SIZE_CONTROL_38,
+        frame_style="background: transparent;",
+        label_style=f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD};",
+        label_width=label_w,
+        margins=(0, 0, 0, 0),
+        spacing=SPACE_MD,
+    )
 
 
 def _default_class_color(cls_name: str) -> str:
@@ -185,6 +205,119 @@ def _default_class_color(cls_name: str) -> str:
         _CLASS_COLOR_8,
     ]
     return _colors[hash(cls_name) % len(_colors)]
+
+
+def _class_swatch_style(color_hex: str, *, selected: bool = False) -> str:
+    border_col = _ACCENT if selected else _BORDER
+    border_w = SPACE_XXS if selected else SPACE_XXXS
+    radius = SIZE_CONTROL_22 // 2
+    return (
+        "QPushButton {"
+        f" background: {color_hex};"
+        f" border: {border_w}px solid {border_col};"
+        f" border-radius: {radius}px;"
+        " padding: 0;"
+        f" min-width: {SIZE_CONTROL_22}px;"
+        f" max-width: {SIZE_CONTROL_22}px;"
+        f" min-height: {SIZE_CONTROL_22}px;"
+        f" max-height: {SIZE_CONTROL_22}px;"
+        "}"
+        "QPushButton:hover {"
+        f" border-color: {_ACCENT};"
+        "}"
+    )
+
+
+def _pick_bbox_color(parent: QWidget, current_color: str) -> str | None:
+    selected = [QColor(current_color) if QColor(current_color).isValid() else QColor(_CLASS_COLOR_1)]
+
+    dlg = QDialog(parent)
+    dlg.setWindowTitle("Pick Bbox Color")
+    apply_popup_theme(
+        dlg,
+        f"""
+        QLabel {{
+            color: {_TEXT_SEC};
+            font-size: {FONT_SIZE_LABEL}px;
+            background: transparent;
+        }}
+        """,
+    )
+    dlg.setModal(True)
+    dlg.setFixedWidth(420)
+
+    lay = QVBoxLayout(dlg)
+    lay.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+    lay.setSpacing(SPACE_MD)
+
+    title = QLabel("Choose any color")
+    title.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_BOLD))
+    lay.addWidget(title)
+
+    row = QHBoxLayout()
+    row.setSpacing(SPACE_SM)
+    preview = QLabel()
+    preview.setFixedSize(34, 34)
+
+    def _apply_preview() -> None:
+        preview.setStyleSheet(
+            f"background:{selected[0].name()}; border:{SPACE_XXXS}px solid {_BORDER}; border-radius:{RADIUS_6}px;"
+        )
+
+    _apply_preview()
+    row.addWidget(preview)
+
+    hex_edit = QLineEdit(selected[0].name())
+    hex_edit.setPlaceholderText("#RRGGBB")
+    hex_edit.setStyleSheet(_FORM_INPUTS)
+    hex_edit.setObjectName("models_field")
+    hex_edit.setFixedHeight(SIZE_CONTROL_MD)
+    row.addWidget(hex_edit, stretch=1)
+
+    pick_btn = QPushButton("Choose...")
+    pick_btn.setFixedSize(SIZE_BTN_W_100, SIZE_CONTROL_MD)
+    pick_btn.setStyleSheet(_SECONDARY_BTN)
+
+    def _choose_any_color() -> None:
+        c = QColorDialog.getColor(selected[0], dlg, "Pick Any Color")
+        if c.isValid():
+            selected[0] = c
+            hex_edit.setText(c.name())
+            _apply_preview()
+
+    pick_btn.clicked.connect(_choose_any_color)
+    row.addWidget(pick_btn)
+    lay.addLayout(row)
+
+    def _on_hex_changed(text: str) -> None:
+        val = text.strip()
+        if not val:
+            return
+        if not val.startswith("#"):
+            val = f"#{val}"
+        c = QColor(val)
+        if c.isValid():
+            selected[0] = c
+            _apply_preview()
+
+    hex_edit.textChanged.connect(_on_hex_changed)
+
+    actions = QHBoxLayout()
+    actions.addStretch()
+    cancel_btn = QPushButton("Cancel")
+    cancel_btn.setFixedSize(SIZE_BTN_W_100, SIZE_CONTROL_MD)
+    cancel_btn.setStyleSheet(_SECONDARY_BTN)
+    cancel_btn.clicked.connect(dlg.reject)
+    actions.addWidget(cancel_btn)
+
+    ok_btn = QPushButton("OK")
+    ok_btn.setFixedSize(SIZE_BTN_W_100, SIZE_CONTROL_MD)
+    ok_btn.setStyleSheet(_PRIMARY_BTN)
+    ok_btn.clicked.connect(dlg.accept)
+    actions.addWidget(ok_btn)
+    lay.addLayout(actions)
+
+    return selected[0].name() if dlg.exec() == QDialog.DialogCode.Accepted else None
 
 
 class ModelsPage(QWidget):
@@ -224,7 +357,7 @@ class ModelsPage(QWidget):
         safe_set_point_size(tf, FONT_SIZE_LARGE)
         tf.setBold(True)
         title.setFont(tf)
-        title.setStyleSheet(f"color: {_TEXT_PRI}; background: transparent; border: none; padding: 0;")
+        title.setStyleSheet(_TITLE_STYLE)
         hl.addWidget(title)
         hl.addStretch()
         root.addWidget(header_w)
@@ -247,7 +380,7 @@ class ModelsPage(QWidget):
         root.addWidget(tab_bar)
 
         self._stack = QStackedWidget()
-        self._stack.setStyleSheet(f"background: {_BG_BASE};")
+        self._stack.setStyleSheet(_BG_BASE_STYLE)
         self._stack.addWidget(self._build_face_tab())
         self._stack.addWidget(self._build_object_tab())
         root.addWidget(self._stack, stretch=1)
@@ -261,7 +394,7 @@ class ModelsPage(QWidget):
 
     def _build_face_tab(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background: {_BG_BASE};")
+        w.setStyleSheet(_BG_BASE_STYLE)
         root = QVBoxLayout(w)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -270,7 +403,7 @@ class ModelsPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
-        body.setStyleSheet(f"background: {_BG_BASE};")
+        body.setStyleSheet(_BG_BASE_STYLE)
         bl = QVBoxLayout(body)
         bl.setContentsMargins(SPACE_20, SPACE_LG, SPACE_20, SPACE_20)
         bl.setSpacing(SPACE_MD)
@@ -278,7 +411,7 @@ class ModelsPage(QWidget):
         root.addWidget(scroll, stretch=1)
 
         card = QWidget()
-        card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        card.setStyleSheet(card_shell_style())
         card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         cl_outer = QVBoxLayout(card)
         cl_outer.setContentsMargins(0, 0, 0, 0)
@@ -286,13 +419,11 @@ class ModelsPage(QWidget):
 
         card_hdr = QWidget()
         card_hdr.setFixedHeight(SIZE_CONTROL_LG)
-        card_hdr.setStyleSheet("background: transparent;")
+        card_hdr.setStyleSheet(transparent_surface_style())
         card_hdr_l = QHBoxLayout(card_hdr)
         card_hdr_l.setContentsMargins(SPACE_20, 0, SPACE_20, 0)
         hdr_lbl = QLabel("FACE RECOGNITION MODEL")
-        hdr_lbl.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        hdr_lbl.setStyleSheet(section_kicker_style())
         card_hdr_l.addWidget(hdr_lbl)
         card_hdr_l.addStretch()
         cl_outer.addWidget(card_hdr)
@@ -306,14 +437,15 @@ class ModelsPage(QWidget):
         st_row.setSpacing(SPACE_SM)
         self._fm_status_dot = QLabel("●")
         self._fm_status_dot.setFixedSize(SIZE_CONTROL_22, SIZE_CONTROL_22)
-        self._fm_status_dot.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LARGE}px;")
+        self._fm_status_dot.setStyleSheet(_DOT_DEFAULT_STYLE)
         st_row.addWidget(self._fm_status_dot)
         self._fm_model_status = QLabel("Checking…")
-        self._fm_model_status.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+        self._fm_model_status.setStyleSheet(_STATUS_DEFAULT_STYLE)
         st_row.addWidget(self._fm_model_status, stretch=1)
         cl.addLayout(st_row)
 
         self._fm_buffalo_combo = QComboBox()
+        self._fm_buffalo_combo.setObjectName("models_field")
         self._fm_buffalo_combo.setFixedHeight(SIZE_CONTROL_MD)
         from backend.models.face_model import AVAILABLE_MODELS
 
@@ -325,15 +457,16 @@ class ModelsPage(QWidget):
             "antelopev2: highest accuracy, largest model"
         )
         self._fm_buffalo_combo.activated.connect(self._fm_on_model_changed)
-        cl.addLayout(_field_row("Model Pack", self._fm_buffalo_combo))
+        cl.addWidget(_field_row("Model Pack", self._fm_buffalo_combo))
 
         path_row = QHBoxLayout()
         path_row.setSpacing(SPACE_MD)
         path_lbl = QLabel("Model Root")
         path_lbl.setFixedWidth(SIZE_FIELD_W)
-        path_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+        path_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         path_row.addWidget(path_lbl)
         self._fm_model_path = QLineEdit()
+        self._fm_model_path.setObjectName("models_field")
         self._fm_model_path.setPlaceholderText("~/.insightface  (leave blank for default)")
         self._fm_model_path.setFixedHeight(SIZE_CONTROL_MD)
         _fm_folder_action = self._fm_model_path.addAction(
@@ -354,14 +487,14 @@ class ModelsPage(QWidget):
         act_row.addWidget(self._fm_save_reload_btn)
 
         self._status_lbl = QLabel("")
-        self._status_lbl.setStyleSheet(f"color:{_SUCCESS};font-weight:{FONT_WEIGHT_BOLD};font-size:{FONT_SIZE_LABEL}px;")
+        self._status_lbl.setStyleSheet(text_style(_SUCCESS, size=FONT_SIZE_LABEL, weight=FONT_WEIGHT_BOLD))
         self._status_lbl.setContentsMargins(0, 0, 0, 0)
         self._status_lbl.setVisible(False)
         act_row.addWidget(self._status_lbl)
         cl.addLayout(act_row)
 
         submodels_card = QWidget()
-        submodels_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        submodels_card.setStyleSheet(card_shell_style())
         submodels_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sm_outer = QVBoxLayout(submodels_card)
         sm_outer.setContentsMargins(0, 0, 0, 0)
@@ -369,25 +502,23 @@ class ModelsPage(QWidget):
 
         sm_hdr = QWidget()
         sm_hdr.setFixedHeight(SIZE_CONTROL_LG)
-        sm_hdr.setStyleSheet("background: transparent;")
+        sm_hdr.setStyleSheet(transparent_surface_style())
         sm_hdr_l = QHBoxLayout(sm_hdr)
         sm_hdr_l.setContentsMargins(SPACE_20, 0, SPACE_20, 0)
         sm_hdr_lbl = QLabel("SUB-MODELS")
-        sm_hdr_lbl.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        sm_hdr_lbl.setStyleSheet(section_kicker_style())
         sm_hdr_l.addWidget(sm_hdr_lbl)
         sm_hdr_l.addStretch()
         sm_outer.addWidget(sm_hdr)
 
         self._fm_submodels_card = QWidget()
-        self._fm_submodels_card.setStyleSheet("background: transparent;")
+        self._fm_submodels_card.setStyleSheet(transparent_surface_style())
         self._fm_submodels_vbox = QVBoxLayout(self._fm_submodels_card)
         self._fm_submodels_vbox.setContentsMargins(SPACE_20, SPACE_MD, SPACE_20, SPACE_LG)
         self._fm_submodels_vbox.setSpacing(SPACE_XS)
 
         _placeholder = QLabel("Load the model first to see sub-modules.")
-        _placeholder.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px; font-style: italic;")
+        _placeholder.setStyleSheet(_SUBMODEL_EMPTY_STYLE)
         self._fm_submodels_vbox.addWidget(_placeholder)
         sm_outer.addWidget(self._fm_submodels_card)
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -419,7 +550,7 @@ class ModelsPage(QWidget):
         self._ONNXObjectModel = ONNXObjectModel
 
         w = QWidget()
-        w.setStyleSheet(f"background: {_BG_BASE};")
+        w.setStyleSheet(_BG_BASE_STYLE)
         root = QVBoxLayout(w)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -428,7 +559,7 @@ class ModelsPage(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         body = QWidget()
-        body.setStyleSheet(f"background: {_BG_BASE};")
+        body.setStyleSheet(_BG_BASE_STYLE)
         bl = QVBoxLayout(body)
         bl.setContentsMargins(SPACE_20, SPACE_LG, SPACE_20, SPACE_20)
         bl.setSpacing(SPACE_MD)
@@ -436,7 +567,7 @@ class ModelsPage(QWidget):
         root.addWidget(scroll, stretch=1)
 
         plugins_card = QWidget()
-        plugins_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        plugins_card.setStyleSheet(card_shell_style())
         plugins_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         pc_outer = QVBoxLayout(plugins_card)
         pc_outer.setContentsMargins(0, 0, 0, 0)
@@ -444,19 +575,17 @@ class ModelsPage(QWidget):
 
         pc_hdr = QWidget()
         pc_hdr.setFixedHeight(SIZE_CONTROL_LG)
-        pc_hdr.setStyleSheet("background: transparent;")
+        pc_hdr.setStyleSheet(transparent_surface_style())
         pc_hdr_l = QHBoxLayout(pc_hdr)
         pc_hdr_l.setContentsMargins(SPACE_20, 0, SPACE_20, 0)
         pc_hdr_lbl = QLabel("REGISTERED PLUGINS")
-        pc_hdr_lbl.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        pc_hdr_lbl.setStyleSheet(section_kicker_style())
         pc_hdr_l.addWidget(pc_hdr_lbl)
         pc_hdr_l.addStretch()
         pc_outer.addWidget(pc_hdr)
 
         self._plugins_container = QWidget()
-        self._plugins_container.setStyleSheet("background: transparent;")
+        self._plugins_container.setStyleSheet(transparent_surface_style())
         self._plugins_vbox = QVBoxLayout(self._plugins_container)
         self._plugins_vbox.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
         self._plugins_vbox.setSpacing(SPACE_6)
@@ -464,7 +593,7 @@ class ModelsPage(QWidget):
         pc_outer.addWidget(self._plugins_container)
 
         add_card = QWidget()
-        add_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        add_card.setStyleSheet(card_shell_style())
         add_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         ac_outer = QVBoxLayout(add_card)
         ac_outer.setContentsMargins(0, 0, 0, 0)
@@ -472,13 +601,11 @@ class ModelsPage(QWidget):
 
         ac_hdr = QWidget()
         ac_hdr.setFixedHeight(SIZE_CONTROL_LG)
-        ac_hdr.setStyleSheet("background: transparent;")
+        ac_hdr.setStyleSheet(transparent_surface_style())
         ac_hdr_l = QHBoxLayout(ac_hdr)
         ac_hdr_l.setContentsMargins(SPACE_20, 0, SPACE_20, 0)
         ac_hdr_lbl = QLabel("REGISTER NEW PLUGIN")
-        ac_hdr_lbl.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        ac_hdr_lbl.setStyleSheet(section_kicker_style())
         ac_hdr_l.addWidget(ac_hdr_lbl)
         ac_hdr_l.addStretch()
         ac_outer.addWidget(ac_hdr)
@@ -489,21 +616,23 @@ class ModelsPage(QWidget):
         ac_outer.addLayout(ac)
 
         self._ap_name = QLineEdit()
+        self._ap_name.setObjectName("models_field")
         self._ap_name.setPlaceholderText("Unique plugin name")
         self._ap_name.setFixedHeight(SIZE_CONTROL_MD)
-        ac.addLayout(_field_row("Name *", self._ap_name))
+        ac.addWidget(_field_row("Name *", self._ap_name))
         _sep = QFrame()
         _sep.setFixedHeight(SPACE_XXXS)
-        _sep.setStyleSheet(f"background: {_BORDER_DIM}; border: none;")
+        _sep.setStyleSheet(divider_style(_BORDER_DIM))
         ac.addWidget(_sep)
 
         weights_row = QHBoxLayout()
         weights_row.setSpacing(SPACE_MD)
         w_lbl = QLabel("Weights *")
         w_lbl.setFixedWidth(SIZE_FIELD_W)
-        w_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+        w_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         weights_row.addWidget(w_lbl)
         self._ap_weight = QLineEdit()
+        self._ap_weight.setObjectName("models_field")
         self._ap_weight.setPlaceholderText(".onnx / .pt / .pth file path")
         self._ap_weight.setFixedHeight(SIZE_CONTROL_MD)
         _folder_action = self._ap_weight.addAction(
@@ -515,16 +644,17 @@ class ModelsPage(QWidget):
         ac.addLayout(weights_row)
         _sep = QFrame()
         _sep.setFixedHeight(SPACE_XXXS)
-        _sep.setStyleSheet(f"background: {_BORDER_DIM}; border: none;")
+        _sep.setStyleSheet(divider_style(_BORDER_DIM))
         ac.addWidget(_sep)
 
         opts_row = QHBoxLayout()
         opts_row.setSpacing(SPACE_LG)
         t_lbl = QLabel("Type")
         t_lbl.setFixedWidth(SIZE_FIELD_W)
-        t_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+        t_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         opts_row.addWidget(t_lbl)
         self._ap_type = QComboBox()
+        self._ap_type.setObjectName("models_field")
         self._ap_type.addItems(["onnx"])
         self._ap_type.setFixedWidth(SIZE_BTN_W_LG)
         self._ap_type.setFixedHeight(SIZE_CONTROL_MD)
@@ -532,9 +662,10 @@ class ModelsPage(QWidget):
 
         opts_row.addSpacing(SPACE_XL)
         c_lbl = QLabel("Confidence")
-        c_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+        c_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         opts_row.addWidget(c_lbl)
         self._ap_conf = QSpinBox()
+        self._ap_conf.setObjectName("models_field")
         self._ap_conf.setRange(1, 100)
         self._ap_conf.setValue(50)
         self._ap_conf.setSuffix("%")
@@ -550,11 +681,11 @@ class ModelsPage(QWidget):
         ac.addLayout(opts_row)
         _sep = QFrame()
         _sep.setFixedHeight(SPACE_XXXS)
-        _sep.setStyleSheet(f"background: {_BORDER_DIM}; border: none;")
+        _sep.setStyleSheet(divider_style(_BORDER_DIM))
         ac.addWidget(_sep)
 
         self._ap_classes_lbl = QLabel("")
-        self._ap_classes_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px;")
+        self._ap_classes_lbl.setStyleSheet(muted_label_style())
         self._ap_classes_lbl.setWordWrap(True)
         ac.addWidget(self._ap_classes_lbl)
 
@@ -574,8 +705,8 @@ class ModelsPage(QWidget):
         splitter.setStyleSheet("QSplitter::handle { background: transparent; }")
         splitter.setOpaqueResize(True)
         splitter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        splitter.addWidget(plugins_card)
         splitter.addWidget(add_card)
+        splitter.addWidget(plugins_card)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
         _qs = QSettings("SmartEye", "ModelsObject")
@@ -584,9 +715,9 @@ class ModelsPage(QWidget):
             try:
                 splitter.setSizes([int(_saved[0]), int(_saved[1])])
             except (ValueError, TypeError):
-                splitter.setSizes([320, 260])
+                splitter.setSizes([260, 320])
         else:
-            splitter.setSizes([320, 260])
+            splitter.setSizes([260, 320])
         splitter.splitterMoved.connect(lambda _pos, _idx: _qs.setValue("splitter/sizes", splitter.sizes()))
         bl.addWidget(splitter, stretch=1)
         return w
@@ -597,13 +728,13 @@ class ModelsPage(QWidget):
         fm = get_face_model()
         if fm.is_loaded:
             providers_str = ", ".join(p.replace("ExecutionProvider", "") for p in (fm.providers_used or [])) or "CPU"
-            self._fm_status_dot.setStyleSheet(f"color: {_SUCCESS}; font-size: {FONT_SIZE_LARGE}px;")
+            self._fm_status_dot.setStyleSheet(_DOT_OK_STYLE)
             self._fm_model_status.setText(f"{fm.model_name} — {providers_str}")
-            self._fm_model_status.setStyleSheet(f"color: {_SUCCESS}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+            self._fm_model_status.setStyleSheet(_STATUS_OK_STYLE)
         else:
-            self._fm_status_dot.setStyleSheet(f"color: {_DANGER}; font-size: {FONT_SIZE_LARGE}px;")
+            self._fm_status_dot.setStyleSheet(_DOT_ERR_STYLE)
             self._fm_model_status.setText("Not loaded")
-            self._fm_model_status.setStyleSheet(f"color: {_DANGER}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD};")
+            self._fm_model_status.setStyleSheet(_STATUS_ERR_STYLE)
         with contextlib.suppress(Exception):
             self._fm_model_path.setText(db.get_setting("insightface_model_dir", ""))
         with contextlib.suppress(Exception):
@@ -623,7 +754,7 @@ class ModelsPage(QWidget):
                 if w is not None:
                     try:
                         w.deleteLater()
-                    except Exception:
+                    except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                         pass
                 else:
                     sublay = it.layout()
@@ -638,7 +769,7 @@ class ModelsPage(QWidget):
                 w = it.widget()
                 if w is not None:
                     w.deleteLater()
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 break
 
         from backend.models.model_loader import get_face_model
@@ -650,16 +781,14 @@ class ModelsPage(QWidget):
             placeholder = QLabel(
                 "Load the model first to see sub-modules." if not fm.is_loaded else "No ONNX files found in model directory."
             )
-            placeholder.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px; font-style: italic;")
+            placeholder.setStyleSheet(_SUBMODEL_EMPTY_STYLE)
             self._fm_submodels_vbox.addWidget(placeholder)
             return
 
         hdr = QHBoxLayout()
         for text, stretch in [("File", 1), ("Task", 0), ("Status", 0), ("Enabled", 0)]:
             lbl = QLabel(text.upper())
-            lbl.setStyleSheet(
-                f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-            )
+            lbl.setStyleSheet(section_kicker_style())
             if not stretch:
                 lbl.setFixedWidth(SIZE_BTN_W_SM)
             hdr.addWidget(lbl, stretch=stretch)
@@ -688,12 +817,12 @@ class ModelsPage(QWidget):
 
             task_lbl = QLabel(sm["task"].replace("_", " ").title())
             task_lbl.setFixedWidth(SIZE_BTN_W_SM)
-            task_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px;")
+            task_lbl.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_LABEL))
             rl.addWidget(task_lbl)
 
             status_dot = QLabel("●")
             status_dot.setFixedWidth(SIZE_BTN_W_SM)
-            status_dot.setStyleSheet(f"color: {_SUCCESS if sm['loaded'] else _TEXT_MUTED}; font-size: {FONT_SIZE_SUBHEAD}px;")
+            status_dot.setStyleSheet(text_style(_SUCCESS if sm["loaded"] else _TEXT_MUTED, size=FONT_SIZE_SUBHEAD))
             status_dot.setToolTip("Loaded" if sm["loaded"] else "Not loaded / disabled")
             rl.addWidget(status_dot)
 
@@ -712,7 +841,7 @@ class ModelsPage(QWidget):
             if i < len(submodels) - 1:
                 line = QFrame()
                 line.setFixedHeight(SPACE_XXXS)
-                line.setStyleSheet(f"background: {_BORDER_DIM}; border: none;")
+                line.setStyleSheet(divider_style(_BORDER_DIM))
                 row_wrap.addWidget(line)
             self._fm_submodels_vbox.addWidget(row_w)
 
@@ -729,11 +858,9 @@ class ModelsPage(QWidget):
     def _fm_on_model_changed(self, idx: int) -> None:
         sel = self._fm_buffalo_combo.itemData(idx) or "buffalo_l"
         db.set_setting("insightface_model_name", sel)
-        self._fm_status_dot.setStyleSheet(f"color: {_WARNING_ORANGE}; font-size: {FONT_SIZE_LARGE}px;")
+        self._fm_status_dot.setStyleSheet(_DOT_WARN_STYLE)
         self._fm_model_status.setText(f"Switching to {sel}…")
-        self._fm_model_status.setStyleSheet(
-            f"color: {_WARNING_ORANGE}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
-        )
+        self._fm_model_status.setStyleSheet(_STATUS_WARN_STYLE)
         if self._fm_reload_timer:
             self._fm_reload_timer.stop()
         self._fm_reload_timer = QTimer(self)
@@ -773,11 +900,9 @@ class ModelsPage(QWidget):
             old.quit()
             old.wait(800)
         path = self._fm_model_path.text().strip()
-        self._fm_status_dot.setStyleSheet(f"color: {_WARNING_ORANGE}; font-size: {FONT_SIZE_LARGE}px;")
+        self._fm_status_dot.setStyleSheet(_DOT_WARN_STYLE)
         self._fm_model_status.setText("⏳ Loading model — please wait…")
-        self._fm_model_status.setStyleSheet(
-            f"color: {_WARNING_ORANGE}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
-        )
+        self._fm_model_status.setStyleSheet(_STATUS_WARN_STYLE)
         self._fm_save_reload_btn.setEnabled(False)
         self._fm_save_reload_btn.setText("Loading…")
 
@@ -800,7 +925,7 @@ class ModelsPage(QWidget):
                     else:
                         fm.load(self._p)
                     self.finished.emit(fm.is_loaded, "")
-                except Exception as exc:
+                except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
                     self.finished.emit(False, str(exc))
 
         worker = _Worker(path, force, self)
@@ -832,19 +957,15 @@ class ModelsPage(QWidget):
                 label = f"{fm.model_name} — {providers_str}"
                 if note:
                     label += f"  (note: {note})"
-                self._fm_status_dot.setStyleSheet(f"color: {_SUCCESS}; font-size: {FONT_SIZE_LARGE}px;")
+                self._fm_status_dot.setStyleSheet(_DOT_OK_STYLE)
                 self._fm_model_status.setText(label)
-                self._fm_model_status.setStyleSheet(
-                    f"color: {_SUCCESS}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
-                )
+                self._fm_model_status.setStyleSheet(_STATUS_OK_STYLE)
                 self._refresh_submodels()
             else:
                 msg = f"Error — {err}" if err else "Not loaded"
-                self._fm_status_dot.setStyleSheet(f"color: {_DANGER}; font-size: {FONT_SIZE_LARGE}px;")
+                self._fm_status_dot.setStyleSheet(_DOT_ERR_STYLE)
                 self._fm_model_status.setText(msg)
-                self._fm_model_status.setStyleSheet(
-                    f"color: {_DANGER}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
-                )
+                self._fm_model_status.setStyleSheet(_STATUS_ERR_STYLE)
 
         worker.finished.connect(_on_done)
         worker.finished.connect(worker.deleteLater)
@@ -857,16 +978,16 @@ class ModelsPage(QWidget):
                 item.widget().deleteLater()
         try:
             plugins = db.get_plugins()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             plugins = []
         if not plugins:
             empty = QLabel("No plugins registered yet.")
-            empty.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px; font-style: italic; padding: {SPACE_6}px 0;")
+            empty.setStyleSheet(_PLUGIN_EMPTY_STYLE)
             self._plugins_vbox.addWidget(empty)
             return
         for i, p in enumerate(plugins):
             row_w = QFrame()
-            row_w.setStyleSheet(f"QFrame {{ background: {_BG_RAISED}; border: none; border-radius: {RADIUS_MD}px; }}")
+            row_w.setStyleSheet(card_shell_style(bg=_BG_RAISED, radius=RADIUS_MD))
             row_w.setFixedHeight(SIZE_ROW_48)
             rl = QHBoxLayout(row_w)
             rl.setContentsMargins(SPACE_LG, 0, SPACE_10, 0)
@@ -877,7 +998,7 @@ class ModelsPage(QWidget):
             )
             rl.addWidget(name_lbl, stretch=1)
             weight_lbl = QLabel(os.path.basename(p.get("weights_path", "") or ""))
-            weight_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
+            weight_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION) + " background: transparent;")
             rl.addWidget(weight_lbl)
             type_lbl = QLabel((p.get("model_type") or "").upper())
             type_lbl.setStyleSheet(
@@ -887,7 +1008,7 @@ class ModelsPage(QWidget):
             conf_raw = p.get("confidence", 0) or 0
             conf_pct = int(conf_raw * 100) if conf_raw <= 1.0 else int(conf_raw)
             conf_lbl = QLabel(f"{conf_pct}% conf")
-            conf_lbl.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
+            conf_lbl.setStyleSheet(text_style(_TEXT_SEC, size=FONT_SIZE_CAPTION, extra="background: transparent;"))
             rl.addWidget(conf_lbl)
             del_btn = QPushButton("Delete")
             del_btn.setFixedHeight(SIZE_ITEM_SM)
@@ -899,20 +1020,17 @@ class ModelsPage(QWidget):
             self._plugins_vbox.addWidget(row_w)
             sep = QFrame()
             sep.setFixedHeight(SPACE_XXXS)
-            sep.setStyleSheet(f"background: {_BORDER_DIM}; border: none;")
+            sep.setStyleSheet(divider_style(_BORDER_DIM))
             self._plugins_vbox.addWidget(sep)
 
             try:
                 classes = db.get_plugin_classes(plugin_id=pid)
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 classes = []
             if classes:
-                from PySide6.QtWidgets import QColorDialog
-
                 cls_header = QLabel("Bbox Colors")
                 cls_header.setStyleSheet(
-                    f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY};"
-                    f" letter-spacing: {SPACE_XXXS}px; padding: {SPACE_XXS}px 0 {SPACE_XXS}px {SPACE_LG}px; background: transparent;"
+                    f"{section_kicker_style()} padding: {SPACE_XXS}px 0 {SPACE_XXS}px {SPACE_LG}px; background: transparent;"
                 )
                 self._plugins_vbox.addWidget(cls_header)
                 for cls in classes:
@@ -930,23 +1048,26 @@ class ModelsPage(QWidget):
                     swatch.setFixedSize(SIZE_CONTROL_22, SIZE_CONTROL_22)
                     swatch.setToolTip("Click to change bbox color")
                     _c = color_val if color_val else _default_class_color(cls["class_name"])
-                    swatch.setStyleSheet(f"background: {_c}; border: {SPACE_XXXS}px solid {_BORDER}; border-radius: {RADIUS_SM}px;")
+                    swatch.setStyleSheet(_class_swatch_style(_c))
+                    swatch.setProperty("color_hex", _c)
                     _cid = cls["id"]
                     _cnm = cls["class_name"]
 
                     def _pick(_, cid=_cid, cnm=_cnm, sw=swatch):
-                        color = QColorDialog.getColor(parent=self)
-                        if color.isValid():
-                            hex_c = color.name()
-                            db.set_class_color(cid, hex_c)
-                            sw.setStyleSheet(f"background: {hex_c}; border: {SPACE_XXXS}px solid {_BORDER}; border-radius: {RADIUS_SM}px;")
-                            notify_plugins_changed()
+                        current = sw.property("color_hex") or _default_class_color(cnm)
+                        picked = _pick_bbox_color(self, current)
+                        if not picked:
+                            return
+                        db.set_class_color(cid, picked)
+                        sw.setStyleSheet(_class_swatch_style(picked))
+                        sw.setProperty("color_hex", picked)
+                        notify_plugins_changed()
 
                     swatch.clicked.connect(_pick)
                     crl.addWidget(swatch)
 
                     name_lbl = QLabel(cls["class_name"])
-                    name_lbl.setStyleSheet(f"color: {_TEXT_PRI}; font-size: {FONT_SIZE_LABEL}px; background: transparent;")
+                    name_lbl.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_LABEL, extra="background: transparent;"))
                     crl.addWidget(name_lbl, stretch=1)
 
                     reset_btn = QPushButton("Reset")
@@ -956,10 +1077,9 @@ class ModelsPage(QWidget):
 
                     def _reset(_, cid=_cid, cnm=_cnm, sw=swatch):
                         db.set_class_color(cid, "")
-                        sw.setStyleSheet(
-                            f"background: {_default_class_color(cnm)};"
-                            f" border: {SPACE_XXXS}px solid {_BORDER}; border-radius: {RADIUS_SM}px;"
-                        )
+                        reset_color = _default_class_color(cnm)
+                        sw.setStyleSheet(_class_swatch_style(reset_color))
+                        sw.setProperty("color_hex", reset_color)
                         notify_plugins_changed()
 
                     reset_btn.clicked.connect(_reset)
@@ -982,7 +1102,7 @@ class ModelsPage(QWidget):
             return
         try:
             db.delete_plugin(plugin_id)
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             logger.exception("Failed to delete plugin %s", plugin_id)
             QMessageBox.critical(self, "Error", f"Failed to delete plugin:\n{exc}")
             return
@@ -1015,7 +1135,7 @@ class ModelsPage(QWidget):
                 )
             else:
                 self._ap_classes_lbl.setText("No classes detected — you can add them manually later.")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             self._ap_classes_lbl.setText(f"Inspect failed: {exc}")
 
     def _do_add_plugin(self) -> None:
@@ -1045,7 +1165,7 @@ class ModelsPage(QWidget):
                 f"A plugin named '{name}' already exists.\nChoose a different name or delete the existing plugin first.",
             )
             return
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             logger.exception("Failed to add plugin")
             QMessageBox.critical(self, "Error", f"Failed:\n{exc}")
             return
@@ -1090,3 +1210,4 @@ class ModelsPage(QWidget):
     def on_unload(self) -> None:
         if self._fm_reload_timer:
             self._fm_reload_timer.stop()
+

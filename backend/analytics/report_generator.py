@@ -18,7 +18,7 @@ from backend.analytics import stats_engine
 from utils import config
 
 
-def generate_report(filepath, date_from=None, date_to=None, camera_id=None):
+def generate_report(filepath, date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, time_basis=None):
     doc = SimpleDocTemplate(filepath, pagesize=A4, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle("ReportTitle", parent=styles["Title"], fontSize=24, textColor=colors.HexColor("#1a73e8"), spaceAfter=20)
@@ -47,8 +47,17 @@ def generate_report(filepath, date_from=None, date_to=None, camera_id=None):
     else:
         date_range = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     elements.append(Paragraph(date_range, subtitle_style))
+    filters = []
+    if time_basis:
+        filters.append(f"Time basis: {time_basis}")
+    if rule_name:
+        filters.append(f"Rule: {rule_name}")
+    if min_alarm_level is not None:
+        filters.append(f"Min alarm level: {min_alarm_level}")
+    if filters:
+        elements.append(Paragraph(" | ".join(filters), subtitle_style))
     elements.append(Spacer(1, 20))
-    summary = stats_engine.get_summary(date_from, date_to, camera_id)
+    summary = stats_engine.get_summary(date_from, date_to, camera_id, min_alarm_level=min_alarm_level)
     elements.append(Paragraph("Summary", section_style))
     summary_data = [
         ["Metric", "Value"],
@@ -76,7 +85,9 @@ def generate_report(filepath, date_from=None, date_to=None, camera_id=None):
     elements.append(summary_table)
     elements.append(Spacer(1, 20))
     elements.append(Paragraph("Hourly Violation Distribution", section_style))
-    hourly = stats_engine.get_hourly_violation_chart(date_from, date_to)
+    hourly = stats_engine.get_hourly_violation_chart(
+        date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level, time_basis=time_basis
+    )
     hourly_data = [["Hour", "Violations"]]
     for h in hourly:
         hourly_data.append([h["hour"] + ":00", str(h["count"])])
@@ -97,7 +108,9 @@ def generate_report(filepath, date_from=None, date_to=None, camera_id=None):
     elements.append(hourly_table)
     elements.append(Spacer(1, 20))
     elements.append(Paragraph("Top Violators", section_style))
-    persons = stats_engine.get_person_violations(date_from, date_to)
+    persons = stats_engine.get_person_violations(
+        date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level
+    )
     person_data = [["Person", "Violations"]]
     for p in persons:
         person_data.append([p["identity"], str(p["count"])])

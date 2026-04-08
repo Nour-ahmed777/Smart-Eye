@@ -47,7 +47,7 @@ class VideoWidget(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(320, 240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setStyleSheet(f"background-color: {_BLACK}; border-radius: {RADIUS_LG}px;")
+        self.setStyleSheet("background-color: {}; border-radius: {}px;".format(_BLACK, RADIUS_LG))
         self._state = {}
         self._show_overlays = True
         self._zones = []
@@ -198,7 +198,14 @@ class VideoWidget(QLabel):
         self.clear()
         self.setText(text)
         self.setStyleSheet(
-            f"background-color: {_BG_HEATMAP_90}; color: {_TEXT_FAINT}; "
-            f"font-size: {FONT_SIZE_LARGE}px; font-weight: {FONT_WEIGHT_BOLD}; border-radius: {RADIUS_LG}px; "
-            f"border: {SPACE_XXXS}px solid {_WHITE_04};"
+            "background-color: {bg}; color: {text}; font-size: {size}px; "
+            "font-weight: {weight}; border-radius: {radius}px; border: {border_w}px solid {border};".format(
+                bg=_BG_HEATMAP_90,
+                text=_TEXT_FAINT,
+                size=FONT_SIZE_LARGE,
+                weight=FONT_WEIGHT_BOLD,
+                radius=RADIUS_LG,
+                border_w=SPACE_XXXS,
+                border=_WHITE_04,
+            )
         )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 
 from PySide6.QtCore import Qt, QSize, Signal
 from PySide6.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPixmap
@@ -28,13 +29,10 @@ from frontend.styles._btn_styles import _ICON_BTN_GHOST_DANGER
 from frontend.styles._colors import (
     _ACCENT,
     _ACCENT_BG_12,
-    _ACCENT_BG_15,
     _ACCENT_BG_18,
     _ACCENT_HI,
     _ACCENT_HI_BG_35,
-    _ACCENT_HI_BG_45,
     _ACCENT_HI_BG_70,
-    _ACCENT_HI_BG_78,
     _BG_RAISED,
     _BORDER,
     _BORDER_DIM,
@@ -49,20 +47,17 @@ from frontend.styles._colors import (
     _TEXT_SEC,
 )
 from frontend.ui_tokens import (
-    FONT_SIZE_9,
     FONT_SIZE_CAPTION,
     FONT_SIZE_MICRO,
     FONT_SIZE_LABEL,
     FONT_SIZE_SUBHEAD,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_SEMIBOLD,
-    FONT_WEIGHT_HEAVY,
     RADIUS_3,
     RADIUS_6,
     RADIUS_9,
     RADIUS_LG,
     RADIUS_MD,
-    RADIUS_SM,
     RADIUS_XS,
     SIZE_ICON_64,
     SPACE_3,
@@ -75,7 +70,6 @@ from frontend.ui_tokens import (
     SPACE_14,
     SPACE_XS,
     SPACE_XXL,
-    SPACE_LG,
     SPACE_20,
     SIZE_PILL_H,
     SIZE_CONTROL_MID,
@@ -90,7 +84,6 @@ from frontend.ui_tokens import (
     SIZE_SECTION_H,
     SIZE_HERO_HEADER,
     SIZE_ROW_72,
-    SIZE_ROW_XL,
     SPACE_XXS,
     SPACE_XXXS,
 )
@@ -256,7 +249,7 @@ class _IdentityPicker(QWidget):
         faces = []
         try:
             faces = db.get_faces()
-        except Exception:
+        except (sqlite3.Error, RuntimeError, AttributeError, TypeError):
             pass
         self._faces = faces
 
@@ -388,7 +381,7 @@ class _ObjectClassPicker(QWidget):
                             result.append(s)
             result.sort()
             return result
-        except Exception:
+        except (ImportError, AttributeError, TypeError):
             return []
 
     def get_value(self) -> str:
@@ -614,7 +607,7 @@ class AlarmCard(QFrame):
                     self._vol_slider.setValue(int(v * 100))
                     if v <= 0:
                         self._mute.setChecked(True)
-                except Exception:
+                except (TypeError, ValueError):
                     pass
 
         self._update_ui()
@@ -693,7 +686,7 @@ class RuleCard(QFrame):
             if alarms:
                 max_level = max(int(a.get("escalation_level", 0) or 0) for a in alarms)
                 heat_level = max(heat_level, max_level * 3)
-        except Exception:
+        except (sqlite3.Error, RuntimeError, AttributeError, TypeError, ValueError):
             pass
 
         action_fg, action_bg, _action_border, action_label = _ACTION_META.get(

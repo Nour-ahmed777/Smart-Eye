@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 import contextlib
@@ -35,7 +35,6 @@ from frontend.ui_tokens import (
     SPACE_MD,
     SPACE_SM,
     SPACE_XL,
-    SPACE_XXS,
     SPACE_XXXS,
     SPACE_XS,
 )
@@ -266,7 +265,7 @@ class AddCameraPanel(QWidget):
                     with contextlib.suppress(Exception):
                         db.set_setting(f"camera_{cam_id}_max_faces", self.opts["max_faces"])
                     self.done.emit(None, cam_id)
-                except Exception as exc:
+                except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
                     self.done.emit(exc, None)
 
         self._worker = _AddWorker(params, self)
@@ -289,3 +288,4 @@ class AddCameraPanel(QWidget):
         self._worker.done.connect(_finish)
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
+

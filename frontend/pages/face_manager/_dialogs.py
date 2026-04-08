@@ -20,15 +20,16 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.app_theme import safe_set_point_size
+from frontend.dialogs import apply_popup_theme
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_SUBHEAD,
     RADIUS_LG,
+    SIZE_BTN_W_LG,
     SIZE_CONTROL_MD,
     SIZE_DIALOG_W_LG,
     SIZE_LABEL_W,
-    SIZE_ROW_MD,
     SPACE_10,
     SPACE_14,
     SPACE_20,
@@ -56,7 +57,7 @@ def show_edit_face_dialog(parent, face_id: int) -> None:
     dlg = QDialog(parent)
     dlg.setWindowTitle(f"Edit - {face.get('name', '')}")
     dlg.setMinimumWidth(SIZE_DIALOG_W_LG)
-    dlg.setStyleSheet(_STYLESHEET)
+    apply_popup_theme(dlg, _STYLESHEET)
 
     layout = QVBoxLayout(dlg)
     layout.setContentsMargins(SPACE_XL, SPACE_20, SPACE_XL, SPACE_20)
@@ -190,8 +191,9 @@ def show_edit_face_dialog(parent, face_id: int) -> None:
 
     br = QHBoxLayout()
     br.setSpacing(SPACE_SM)
+    br.addStretch()
     sv = QPushButton("Save Changes")
-    sv.setFixedHeight(SIZE_ROW_MD)
+    sv.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
     sv.setStyleSheet(_PRIMARY_BTN)
 
     def do_save():
@@ -237,7 +239,7 @@ def show_edit_face_dialog(parent, face_id: int) -> None:
     br.addWidget(sv)
     cv = QPushButton("Cancel")
     cv.setProperty("class", "secondary")
-    cv.setFixedHeight(SIZE_ROW_MD)
+    cv.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
     cv.clicked.connect(dlg.reject)
     br.addWidget(cv)
     layout.addLayout(br)

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import contextlib
 import re
@@ -33,7 +33,6 @@ from frontend.ui_tokens import (
     SIZE_LABEL_W,
     SIZE_ROW_84,
     SIZE_ROW_MD,
-    SPACE_10,
     SPACE_14,
     SPACE_20,
     SPACE_6,
@@ -390,7 +389,7 @@ class _EnrollPanelMixin:
                     fm = get_face_model()
                     if fm is not None:
                         fm.invalidate_known_cache()
-                except Exception:
+                except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                     pass
                 self._close_enroll_panel()
                 self._refresh()
@@ -402,3 +401,4 @@ class _EnrollPanelMixin:
         self._worker.done.connect(_on_done)
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.start()
+

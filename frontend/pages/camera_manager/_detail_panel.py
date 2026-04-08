@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QIcon, QImage, QPixmap
@@ -26,11 +27,11 @@ from backend.camera.camera_manager import get_camera_manager
 from backend.repository import db
 from backend.pipeline.detector_manager import notify_plugins_changed
 from frontend.app_theme import safe_set_point_size
+from frontend.dialogs import apply_popup_theme
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.styles._colors import (
     _ACCENT,
-    _ACCENT_BG_10,
     _ACCENT_BG_12,
     _ACCENT_BG_15,
     _ACCENT_HI,
@@ -49,6 +50,7 @@ from frontend.styles._colors import (
     _TEXT_SEC,
 )
 from frontend.styles._banner_styles import make_edit_banner
+from frontend.styles.page_styles import divider_style, muted_label_style, section_kicker_style, text_style, transparent_surface_style
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_9,
@@ -56,18 +58,13 @@ from frontend.ui_tokens import (
     FONT_SIZE_LABEL,
     FONT_SIZE_MICRO,
     FONT_SIZE_SUBHEAD,
-    FONT_SIZE_TINY,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_HEAVY,
-    FONT_WEIGHT_NORMAL,
     RADIUS_5,
     RADIUS_MD,
     SPACE_6,
     SPACE_10,
     SPACE_14,
     SPACE_20,
-    SPACE_32,
-    SPACE_40,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
@@ -78,9 +75,9 @@ from frontend.ui_tokens import (
     SIZE_BADGE_H,
     SIZE_BTN_W_80,
     SIZE_BTN_W_84,
+    SIZE_BTN_W_LG,
     SIZE_BTN_W_MD,
     SIZE_BTN_W_SM,
-    SIZE_CONTROL_22,
     SIZE_CONTROL_24,
     SIZE_CONTROL_18,
     SIZE_CONTROL_30,
@@ -98,7 +95,6 @@ from frontend.ui_tokens import (
     SIZE_PREVIEW_W_INNER,
     SIZE_ROW_48,
     SIZE_ROW_MD,
-    SIZE_ROW_SM,
     SIZE_SECTION_H,
     SIZE_TABLE_COL_SM,
     SPACE_XXL,
@@ -121,6 +117,20 @@ from ._constants import (
 )
 
 logger = logging.getLogger(__name__)
+_EMPTY_TITLE_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_BOLD)
+_EMPTY_SUB_STYLE = muted_label_style(size=FONT_SIZE_CAPTION)
+_HERO_STYLE = "QFrame{{background:{bg};border:none;}}".format(bg=_BG_RAISED)
+_NAME_LABEL_STYLE = text_style(_TEXT_PRI)
+_SOURCE_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_CAPTION)
+_ROW_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_LABEL, extra=f"min-width:{SIZE_LABEL_MIN}px;")
+_PLUGIN_NAME_STYLE = text_style(_TEXT_PRI, size=FONT_SIZE_BODY)
+_NO_PLUGIN_STYLE = muted_label_style(size=FONT_SIZE_LABEL) + f" font-style:italic; padding:{SPACE_XS}px 0;"
+_SEPARATOR_STYLE = divider_style(_BORDER_DIM)
+_SOFT_SEPARATOR_STYLE = divider_style(_BORDER_DIM_55)
+_CLASS_EDITOR_TITLE_STYLE = text_style(_TEXT_PRI)
+_CLASS_EDITOR_SUB_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_LABEL)
+_CLASS_ROW_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_LABEL)
+_CLASS_EMPTY_STYLE = muted_label_style(size=FONT_SIZE_LABEL) + f" padding:{SPACE_LG}px;"
 
 
 class CameraDetailPanel(QWidget):
@@ -152,8 +162,8 @@ class CameraDetailPanel(QWidget):
                 if w is not None:
                     try:
                         w.hide()
-                    except Exception:
-                        pass
+                    except (RuntimeError, TypeError):
+                        logger.debug("Failed to hide widget during detail clear", exc_info=True)
                     w.deleteLater()
                 else:
                     child_lay = item.layout()
@@ -163,8 +173,8 @@ class CameraDetailPanel(QWidget):
                             from shiboken6 import delete as _del
 
                             _del(child_lay)
-                        except Exception:
-                            pass
+                        except (ImportError, RuntimeError):
+                            logger.debug("Failed to delete nested layout in detail clear", exc_info=True)
 
         old = self.layout()
         if old is not None:
@@ -173,8 +183,8 @@ class CameraDetailPanel(QWidget):
                 from shiboken6 import delete
 
                 delete(old)
-            except Exception:
-                pass
+            except (ImportError, RuntimeError):
+                logger.debug("Failed to delete old layout in detail panel clear", exc_info=True)
 
     def _build_empty(self):
         self._clear()
@@ -202,13 +212,13 @@ class CameraDetailPanel(QWidget):
 
         t = QLabel("No camera selected")
         t.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        t.setStyleSheet(f"font-size:{FONT_SIZE_BODY}px;font-weight:{FONT_WEIGHT_BOLD};color:{_TEXT_SEC};")
+        t.setStyleSheet(_EMPTY_TITLE_STYLE)
         wl.addWidget(t)
 
         s = QLabel("Select a camera from the list, or add a new one.")
         s.setWordWrap(True)
         s.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        s.setStyleSheet(f"font-size:{FONT_SIZE_CAPTION}px;color:{_TEXT_MUTED};")
+        s.setStyleSheet(_EMPTY_SUB_STYLE)
         wl.addWidget(s)
         lay.addWidget(wrap)
 
@@ -222,7 +232,7 @@ class CameraDetailPanel(QWidget):
         lay.setSpacing(0)
 
         hero = QFrame()
-        hero.setStyleSheet(f"QFrame{{background:{_BG_RAISED};border:none;}}")
+        hero.setStyleSheet(_HERO_STYLE)
         hl = QHBoxLayout(hero)
         hl.setContentsMargins(SPACE_20, SPACE_14, SPACE_20, SPACE_14)
         hl.setSpacing(SPACE_14)
@@ -262,8 +272,8 @@ class CameraDetailPanel(QWidget):
                 )
                 preview_lbl.setPixmap(scaled)
                 preview_lbl.setText("")
-            except Exception:
-                pass
+            except (RuntimeError, ValueError, TypeError):
+                logger.debug("Failed to render camera preview frame cam_id=%s", cam.get("id"), exc_info=True)
 
         try:
             _cm = get_camera_manager()
@@ -279,12 +289,12 @@ class CameraDetailPanel(QWidget):
                     _tm.stop()
                     try:
                         _t.frame_ready.disconnect(_fn)
-                    except Exception:
-                        pass
+                    except (RuntimeError, TypeError):
+                        logger.debug("Failed to disconnect preview frame signal cam_id=%s", cam.get("id"), exc_info=True)
 
                 preview_lbl.destroyed.connect(_cleanup)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError):
+            logger.warning("Failed to initialize camera preview stream cam_id=%s", cam.get("id"), exc_info=True)
 
         hl.addWidget(preview_lbl, alignment=Qt.AlignmentFlag.AlignVCenter)
 
@@ -296,12 +306,12 @@ class CameraDetailPanel(QWidget):
         nf.setBold(True)
         nlbl = QLabel(cam.get("name", ""))
         nlbl.setFont(nf)
-        nlbl.setStyleSheet(f"color:{_TEXT_PRI};")
+        nlbl.setStyleSheet(_NAME_LABEL_STYLE)
         col.addWidget(nlbl)
 
         if cam.get("source"):
             src_lbl = QLabel(cam["source"])
-            src_lbl.setStyleSheet(f"font-size:{FONT_SIZE_CAPTION}px; color:{_TEXT_SEC};")
+            src_lbl.setStyleSheet(_SOURCE_LABEL_STYLE)
             src_lbl.setWordWrap(True)
             col.addWidget(src_lbl)
 
@@ -329,7 +339,7 @@ class CameraDetailPanel(QWidget):
                         _ACCENT_BG_12,
                     )
                 )
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
             plugins = []
         chips.addStretch()
         col.addLayout(chips)
@@ -355,7 +365,7 @@ class CameraDetailPanel(QWidget):
             r.setSpacing(SPACE_10)
             lb = QLabel(f"{label}:")
             lb.setFixedWidth(SIZE_LABEL_W)
-            lb.setStyleSheet(f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px; min-width:{SIZE_LABEL_MIN}px;")
+            lb.setStyleSheet(_ROW_LABEL_STYLE)
             r.addWidget(lb)
             vl = QLabel(value if value else "\u2014")
             vl.setStyleSheet(
@@ -370,7 +380,7 @@ class CameraDetailPanel(QWidget):
         def _div():
             d = QFrame()
             d.setFrameShape(QFrame.Shape.HLine)
-            d.setStyleSheet(f"background:{_BORDER_DIM_55}; border:none; max-height:{SPACE_XXXS}px;")
+            d.setStyleSheet(_SOFT_SEPARATOR_STYLE)
             return d
 
         def _section(title: str):
@@ -380,9 +390,7 @@ class CameraDetailPanel(QWidget):
             r.setContentsMargins(0, SPACE_SM, 0, SPACE_XXS)
             r.setSpacing(SPACE_SM)
             lb = QLabel(title.upper())
-            lb.setStyleSheet(
-                f"font-size:{FONT_SIZE_MICRO}px; font-weight:{FONT_WEIGHT_BOLD}; color:{_TEXT_MUTED}; letter-spacing: {SPACE_XXXS}px;"
-            )
+            lb.setStyleSheet(section_kicker_style())
             r.addWidget(lb)
             ln = QFrame()
             ln.setFrameShape(QFrame.Shape.HLine)
@@ -411,17 +419,17 @@ class CameraDetailPanel(QWidget):
         if face_thresh is None:
             try:
                 face_thresh = db.get_setting("face_similarity_threshold", 0.45)
-            except Exception:
+            except (sqlite3.Error, OSError, ValueError):
                 face_thresh = 0.45
         try:
             thresh_display = f"{int(float(face_thresh) * 100)}%"
-        except Exception:
+        except (TypeError, ValueError):
             thresh_display = "45%"
         try:
             max_faces = db.get_setting(f"camera_{cam['id']}_max_faces", None)
             if max_faces is None:
                 max_faces = db.get_setting("max_faces_per_frame", 16) or 16
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
             max_faces = 16
         for lbl, val in [
             ("Face Recognition", "Enabled" if face_on else "Disabled"),
@@ -435,7 +443,7 @@ class CameraDetailPanel(QWidget):
         bl.addWidget(_section("Detection Plugins"))
         try:
             assigned = db.get_camera_plugins(cam["id"])
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
             assigned = []
         if assigned:
             for p in assigned:
@@ -445,20 +453,20 @@ class CameraDetailPanel(QWidget):
                 pr.setContentsMargins(0, SPACE_XS, 0, SPACE_XS)
                 pr.setSpacing(SPACE_10)
                 pl = QLabel(p["name"])
-                pl.setStyleSheet(f"color:{_TEXT_PRI}; font-size:{FONT_SIZE_BODY}px;")
+                pl.setStyleSheet(_PLUGIN_NAME_STYLE)
                 pr.addWidget(pl, stretch=1)
                 bl.addWidget(pw)
                 bl.addWidget(_div())
         else:
             no_lbl = QLabel("No plugins assigned")
-            no_lbl.setStyleSheet(f"color:{_TEXT_MUTED}; font-size:{FONT_SIZE_LABEL}px; font-style:italic; padding:{SPACE_XS}px 0;")
+            no_lbl.setStyleSheet(_NO_PLUGIN_STYLE)
             bl.addWidget(no_lbl)
 
         bl.addStretch()
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"background:{_BORDER_DIM}; border:none; max-height:{SPACE_XXXS}px;")
+        sep.setStyleSheet(_SEPARATOR_STYLE)
         lay.addWidget(sep)
 
         ab = QHBoxLayout()
@@ -473,8 +481,8 @@ class CameraDetailPanel(QWidget):
         def _do_delete():
             try:
                 logger.info("camera_manager.delete requested id=%s name=%s", self._cam_id, cam.get("name"))
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                logger.debug("Failed to log camera delete request id=%s", self._cam_id, exc_info=True)
             self.delete_requested.emit(self._cam_id)
 
         del_btn.set_confirm_callback(_do_delete)
@@ -499,7 +507,7 @@ class CameraDetailPanel(QWidget):
 
     def _make_hero(self, cam: dict, enabled: bool, face_on: bool) -> QFrame:
         hero = QFrame()
-        hero.setStyleSheet(f"QFrame{{background:{_BG_RAISED};border:none;}}")
+        hero.setStyleSheet(_HERO_STYLE)
         hl = QHBoxLayout(hero)
         hl.setContentsMargins(SPACE_20, SPACE_14, SPACE_20, SPACE_14)
         hl.setSpacing(SPACE_14)
@@ -539,8 +547,8 @@ class CameraDetailPanel(QWidget):
                 )
                 preview_lbl.setPixmap(scaled)
                 preview_lbl.setText("")
-            except Exception:
-                pass
+            except (RuntimeError, ValueError, TypeError):
+                logger.debug("Failed to render preview frame in edit mode cam_id=%s", cam.get("id"), exc_info=True)
 
         try:
             _cm = get_camera_manager()
@@ -556,12 +564,12 @@ class CameraDetailPanel(QWidget):
                     _tm.stop()
                     try:
                         _t.frame_ready.disconnect(_fn)
-                    except Exception:
-                        pass
+                    except (RuntimeError, TypeError):
+                        logger.debug("Failed to disconnect edit preview frame signal cam_id=%s", cam.get("id"), exc_info=True)
 
                 preview_lbl.destroyed.connect(_cleanup)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError):
+            logger.warning("Failed to initialize edit preview stream cam_id=%s", cam.get("id"), exc_info=True)
 
         hl.addWidget(preview_lbl, alignment=Qt.AlignmentFlag.AlignVCenter)
 
@@ -573,12 +581,12 @@ class CameraDetailPanel(QWidget):
         nf.setBold(True)
         nlbl = QLabel(cam.get("name", ""))
         nlbl.setFont(nf)
-        nlbl.setStyleSheet(f"color:{_TEXT_PRI};")
+        nlbl.setStyleSheet(_NAME_LABEL_STYLE)
         col.addWidget(nlbl)
 
         if cam.get("source"):
             src_lbl = QLabel(cam["source"])
-            src_lbl.setStyleSheet(f"font-size:{FONT_SIZE_CAPTION}px; color:{_TEXT_SEC};")
+            src_lbl.setStyleSheet(_SOURCE_LABEL_STYLE)
             src_lbl.setWordWrap(True)
             col.addWidget(src_lbl)
 
@@ -606,8 +614,8 @@ class CameraDetailPanel(QWidget):
                         _ACCENT_BG_12,
                     )
                 )
-        except Exception:
-            pass
+        except (sqlite3.Error, OSError, ValueError):
+            logger.debug("Failed to load plugin pills for camera id=%s", cam.get("id"), exc_info=True)
         chips.addStretch()
         col.addLayout(chips)
 
@@ -634,9 +642,9 @@ class CameraDetailPanel(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setStyleSheet(f"border:none;background:{_BG_SURFACE};")
+        scroll.setStyleSheet("border:none;background:{bg};".format(bg=_BG_SURFACE))
         body = QWidget()
-        body.setStyleSheet(f"background:{_BG_SURFACE};")
+        body.setStyleSheet("background:{bg};".format(bg=_BG_SURFACE))
         body_l = QVBoxLayout(body)
         body_l.setContentsMargins(0, 0, 0, SPACE_XL)
         body_l.setSpacing(0)
@@ -700,14 +708,14 @@ class CameraDetailPanel(QWidget):
             raw_thresh = cam.get("face_similarity_threshold")
             if raw_thresh is None:
                 raw_thresh = db.get_setting("face_similarity_threshold", 0.45)
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
             raw_thresh = 0.45
         thresh_spin = QSpinBox()
         thresh_spin.setRange(1, 100)
         thresh_spin.setSuffix("%")
         try:
             thresh_spin.setValue(int(float(raw_thresh) * 100))
-        except Exception:
+        except (TypeError, ValueError):
             thresh_spin.setValue(45)
         thresh_spin.setStyleSheet(_spin_ss())
         body_l.addWidget(_srow("Match Threshold", thresh_spin))
@@ -716,7 +724,7 @@ class CameraDetailPanel(QWidget):
             cur_max = db.get_setting(f"camera_{cam_id}_max_faces", None)
             if cur_max is None:
                 cur_max = db.get_setting("max_faces_per_frame", 16) or 16
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
             cur_max = 16
         max_faces_spin = QSpinBox()
         max_faces_spin.setRange(1, 256)
@@ -734,7 +742,7 @@ class CameraDetailPanel(QWidget):
         try:
             all_plugins = db.get_plugins()
             assigned_ids = {p["id"] for p in db.get_camera_plugins(cam_id)}
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
             all_plugins = []
             assigned_ids = set()
 
@@ -756,7 +764,7 @@ class CameraDetailPanel(QWidget):
 
         def _build_classes_panel(plugin_id: int) -> tuple:
             wrap = QWidget()
-            wrap.setStyleSheet(f"background:{_BG_RAISED}; border:none;")
+            wrap.setStyleSheet("background:{bg}; border:none;".format(bg=_BG_RAISED))
             wl = QVBoxLayout(wrap)
             wl.setContentsMargins(0, 0, 0, SPACE_6)
             wl.setSpacing(0)
@@ -766,7 +774,7 @@ class CameraDetailPanel(QWidget):
                 overrides = {c["class_index"]: c for c in db.get_camera_plugin_classes(cam_id, plugin_id)}
                 pd_row = db.get_plugin(plugin_id)
                 def_conf = float(pd_row.get("confidence", 0.5)) if pd_row else 0.5
-            except Exception:
+            except (sqlite3.Error, OSError, ValueError, TypeError):
                 classes = []
                 overrides = {}
                 def_conf = 0.5
@@ -788,28 +796,37 @@ class CameraDetailPanel(QWidget):
                 tbl.setFocusPolicy(Qt.FocusPolicy.NoFocus)
                 tbl.setAlternatingRowColors(False)
                 tbl.setShowGrid(False)
-                tbl.setStyleSheet(f"""
+                tbl.setStyleSheet(
+                    """
                     QTableWidget {{
-                        background: {_BG_RAISED};
+                        background: {bg};
                         border: none;
-                        color: {_TEXT_SEC};
-                        font-size: {FONT_SIZE_LABEL}px;
+                        color: {text_sec};
+                        font-size: {fs_label}px;
                         outline: none;
                     }}
                     QTableWidget::item {{
-                        padding: 0 {SPACE_6}px;
-                        border-bottom: {SPACE_XXXS}px solid {_BORDER_DIM};
+                        padding: 0 {pad}px;
+                        border: none;
                         background: transparent;
                     }}
                     QHeaderView::section {{
-                        background: {_BG_RAISED};
-                        color: {_TEXT_MUTED};
-                        font-size: {FONT_SIZE_CAPTION}px;
-                        padding: {SPACE_XS}px {SPACE_6}px;
+                        background: {bg};
+                        color: {text_muted};
+                        font-size: {fs_caption}px;
+                        padding: {pad_y}px {pad}px;
                         border: none;
-                        border-bottom: {SPACE_XXXS}px solid {_BORDER};
                     }}
-                """)
+                    """.format(
+                        bg=_BG_RAISED,
+                        text_sec=_TEXT_SEC,
+                        fs_label=FONT_SIZE_LABEL,
+                        pad=SPACE_6,
+                        text_muted=_TEXT_MUTED,
+                        fs_caption=FONT_SIZE_CAPTION,
+                        pad_y=SPACE_XS,
+                    )
+                )
                 hdr = tbl.horizontalHeader()
                 hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
                 hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -893,19 +910,19 @@ class CameraDetailPanel(QWidget):
                         gc = float(gc) if gc is not None else _dc
                         if gc > 1.0:
                             gc /= 100.0
-                    except Exception:
+                    except (TypeError, ValueError):
                         gc = _dc
                     try:
                         if u_en == g_en and abs(u_c - gc) < 1e-4:
                             db.remove_camera_plugin_class(_cid, pcls_id)
                         else:
                             db.assign_camera_plugin_class(_cid, pcls_id, 1 if u_en else 0, u_c)
-                    except Exception:
+                    except (sqlite3.Error, OSError, ValueError):
                         logger.exception("Failed to save class idx %s", ci)
                 try:
                     notify_plugins_changed()
-                except Exception:
-                    pass
+                except (RuntimeError, OSError):
+                    logger.warning("Failed to notify plugin changes after class save", exc_info=True)
 
             sv_btn.clicked.connect(_do_save_cls)
             sv_row.addWidget(sv_btn)
@@ -930,17 +947,26 @@ class CameraDetailPanel(QWidget):
             expand_btn.setCheckable(True)
             expand_btn.setEnabled(p["id"] in assigned_ids)
             expand_btn.setIcon(_expand_icon(False))
-            expand_btn.setStyleSheet(f"""
+            expand_btn.setStyleSheet(
+                """
                 QPushButton {{
-                    background:{_BG_RAISED}; border:{SPACE_XXXS}px solid {_BORDER};
-                    border-radius:{RADIUS_5}px; padding:0;
+                    background:{bg}; border:{bw}px solid {border};
+                    border-radius:{radius}px; padding:0;
                 }}
-                QPushButton:hover  {{border-color:{_ACCENT};}}
+                QPushButton:hover  {{border-color:{accent};}}
                 QPushButton:checked{{
-                    background:{_ACCENT_BG_15};
-                    border-color:{_ACCENT};
+                    background:{accent_bg};
+                    border-color:{accent};
                 }}
-            """)
+                """.format(
+                    bg=_BG_RAISED,
+                    bw=SPACE_XXXS,
+                    border=_BORDER,
+                    radius=RADIUS_5,
+                    accent=_ACCENT,
+                    accent_bg=_ACCENT_BG_15,
+                )
+            )
             row_h.addWidget(expand_btn)
             body_l.addWidget(_srow(p["name"], row_w))
 
@@ -966,7 +992,7 @@ class CameraDetailPanel(QWidget):
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"background:{_BORDER_DIM};border:none;max-height:{SPACE_XXXS}px;")
+        sep.setStyleSheet(_SEPARATOR_STYLE)
         lay.addWidget(sep)
 
         ab = QHBoxLayout()
@@ -981,8 +1007,8 @@ class CameraDetailPanel(QWidget):
         def _do_delete_edit():
             try:
                 logger.info("camera_manager.delete requested (edit) id=%s name=%s", self._cam_id, cam.get("name"))
-            except Exception:
-                pass
+            except (TypeError, ValueError):
+                logger.debug("Failed to log edit delete request id=%s", self._cam_id, exc_info=True)
             self.delete_requested.emit(self._cam_id)
 
         del_btn_edit.set_confirm_callback(_do_delete_edit)
@@ -1020,33 +1046,33 @@ class CameraDetailPanel(QWidget):
                     face_recognition=1 if face_toggle.isChecked() else 0,
                     face_similarity_threshold=(thresh_spin.value() / 100.0),
                 )
-            except Exception:
+            except (sqlite3.Error, OSError, ValueError):
                 logger.exception("camera_manager.edit save failed id=%s name=%s", cam_id, name)
                 return
             try:
                 db.set_setting(f"camera_{cam_id}_max_faces", int(max_faces_spin.value()))
-            except Exception:
-                pass
+            except (sqlite3.Error, OSError, ValueError):
+                logger.warning("Failed to persist max faces setting for camera id=%s", cam_id, exc_info=True)
             for pid, cb in plugin_checks.items():
                 try:
                     if cb.isChecked():
                         db.assign_plugin_to_camera(cam_id, pid)
                     else:
                         db.unassign_plugin_from_camera(cam_id, pid)
-                except Exception:
+                except (sqlite3.Error, OSError, ValueError):
                     logger.exception("Failed to assign/unassign plugin %s", pid)
             try:
                 notify_plugins_changed()
-            except Exception:
-                pass
+            except (RuntimeError, OSError):
+                logger.warning("Failed to notify plugin changes after camera save", exc_info=True)
             try:
                 cm = get_camera_manager()
                 if enabled_toggle.isChecked():
                     cm.start_camera(cam_id)
                 else:
                     cm.stop_camera(cam_id)
-            except Exception:
-                pass
+            except (ImportError, RuntimeError, OSError):
+                logger.warning("Failed to apply camera runtime state cam_id=%s", cam_id, exc_info=True)
             logger.info(
                 "camera_manager.edit save success id=%s name=%s enabled=%s face_on=%s",
                 cam_id,
@@ -1065,8 +1091,8 @@ class CameraDetailPanel(QWidget):
             return
         try:
             logger.info("camera_manager.edit open id=%s name=%s", self._cam.get("id"), self._cam.get("name"))
-        except Exception:
-            pass
+        except (TypeError, ValueError):
+            logger.debug("Failed to log edit open metadata", exc_info=True)
         self._show_edit(self._cam)
 
     def _open_class_editor(self, cam_id: int, plugin_id: int, plugin_name: str):
@@ -1077,7 +1103,7 @@ class CameraDetailPanel(QWidget):
         dlg.setMinimumWidth(SIZE_DIALOG_W_LG)
         dlg.setMinimumHeight(SIZE_DIALOG_H_LG)
         dlg.setMaximumHeight(SIZE_DIALOG_H_XL)
-        dlg.setStyleSheet(_STYLESHEET)
+        apply_popup_theme(dlg, _STYLESHEET)
 
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(SPACE_20, SPACE_LG, SPACE_20, SPACE_LG)
@@ -1088,12 +1114,12 @@ class CameraDetailPanel(QWidget):
         safe_set_point_size(tf, FONT_SIZE_SUBHEAD)
         tf.setBold(True)
         title_lbl.setFont(tf)
-        title_lbl.setStyleSheet(f"color:{_TEXT_PRI};")
+        title_lbl.setStyleSheet(_CLASS_EDITOR_TITLE_STYLE)
         layout.addWidget(title_lbl)
 
         sub_lbl = QLabel("Override enable/confidence per class for this camera. Defaults come from global plugin settings.")
         sub_lbl.setWordWrap(True)
-        sub_lbl.setStyleSheet(f"color:{_TEXT_SEC};font-size:{FONT_SIZE_LABEL}px;")
+        sub_lbl.setStyleSheet(_CLASS_EDITOR_SUB_STYLE)
         layout.addWidget(sub_lbl)
         layout.addWidget(_make_separator())
 
@@ -1115,9 +1141,16 @@ class CameraDetailPanel(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(f"background:{_BG_RAISED};border:{SPACE_XXXS}px solid {_BORDER};border-radius:{RADIUS_MD}px;")
+        scroll.setStyleSheet(
+            "background:{bg};border:{bw}px solid {border};border-radius:{radius}px;".format(
+                bg=_BG_RAISED,
+                bw=SPACE_XXXS,
+                border=_BORDER,
+                radius=RADIUS_MD,
+            )
+        )
         container = QWidget()
-        container.setStyleSheet(f"background:{_BG_RAISED};")
+        container.setStyleSheet("background:{bg};".format(bg=_BG_RAISED))
         cl = QVBoxLayout(container)
         cl.setContentsMargins(SPACE_MD, SPACE_10, SPACE_MD, SPACE_10)
         cl.setSpacing(SPACE_6)
@@ -1135,7 +1168,7 @@ class CameraDetailPanel(QWidget):
             overrides = {c["class_index"]: c for c in db.get_camera_plugin_classes(cam_id, plugin_id)}
             plugin_row_data = db.get_plugin(plugin_id)
             plugin_default_conf = float(plugin_row_data.get("confidence", 0.5)) if plugin_row_data else 0.5
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError, TypeError):
             logger.exception("Failed to load classes for plugin %s", plugin_id)
             classes = []
             overrides = {}
@@ -1175,13 +1208,13 @@ class CameraDetailPanel(QWidget):
             row_h.addStretch()
 
             row_lbl = QLabel(f"{cls_name}:")
-            row_lbl.setStyleSheet(f"color:{_TEXT_SEC};font-size:{FONT_SIZE_LABEL}px;")
+            row_lbl.setStyleSheet(_CLASS_ROW_LABEL_STYLE)
             form.addRow(row_lbl, row_w)
             widgets[idx] = (cls, en, spin)
 
         if not widgets:
             empty_lbl = QLabel("No classes found for this plugin.")
-            empty_lbl.setStyleSheet(f"color:{_TEXT_MUTED};font-size:{FONT_SIZE_LABEL}px;padding:{SPACE_LG}px;")
+            empty_lbl.setStyleSheet(_CLASS_EMPTY_STYLE)
             empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cl.insertWidget(0, empty_lbl)
 
@@ -1199,9 +1232,10 @@ class CameraDetailPanel(QWidget):
         layout.addWidget(_make_separator())
         btn_row = QHBoxLayout()
         btn_row.setSpacing(SPACE_SM)
+        btn_row.addStretch()
 
         save_btn = QPushButton("Save Overrides")
-        save_btn.setFixedHeight(SIZE_ROW_MD)
+        save_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
         save_btn.setStyleSheet(_PRIMARY_BTN)
 
         def _do_save_classes():
@@ -1221,7 +1255,7 @@ class CameraDetailPanel(QWidget):
                     gconf = float(gconf)
                     if gconf > 1.0:
                         gconf /= 100.0
-                except Exception:
+                except (TypeError, ValueError):
                     gconf = plugin_default_conf
 
                 same_enabled = user_enabled == global_enabled
@@ -1231,12 +1265,12 @@ class CameraDetailPanel(QWidget):
                         db.remove_camera_plugin_class(cam_id, plugin_class_id)
                     else:
                         db.assign_camera_plugin_class(cam_id, plugin_class_id, 1 if user_enabled else 0, user_conf)
-                except Exception:
+                except (sqlite3.Error, OSError, ValueError):
                     logger.exception("Failed to save override for class index %s", idx)
             try:
                 notify_plugins_changed()
-            except Exception:
-                pass
+            except (RuntimeError, OSError):
+                logger.warning("Failed to notify plugin changes after class override save", exc_info=True)
             dlg.accept()
 
         save_btn.clicked.connect(_do_save_classes)
@@ -1244,7 +1278,7 @@ class CameraDetailPanel(QWidget):
 
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setProperty("class", "secondary")
-        cancel_btn.setFixedHeight(SIZE_ROW_MD)
+        cancel_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
         cancel_btn.clicked.connect(dlg.reject)
         btn_row.addWidget(cancel_btn)
         layout.addLayout(btn_row)

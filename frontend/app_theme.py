@@ -1,4 +1,4 @@
-from frontend.styles.theme_parts import build_dark_theme, build_sidebar_dark
+﻿from frontend.styles.theme_parts import build_dark_theme, build_sidebar_dark
 from frontend.styles._colors import _TEXT_PRI
 
 DARK_THEME = build_dark_theme()
@@ -12,7 +12,7 @@ def get_theme(name="dark"):
 def safe_set_point_size(qfont, size, default=12):
     try:
         s = int(size)
-    except Exception:
+    except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
         s = default
     if s <= 0:
         s = default
@@ -36,3 +36,4 @@ def page_base_styles(font_size: int = 13) -> str:
 THEME_REGISTRY = {
     "page_base": page_base_styles(),
 }
+

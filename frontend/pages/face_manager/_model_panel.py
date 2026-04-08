@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import contextlib
 
@@ -237,7 +237,7 @@ class _ModelPanelMixin:
                     else:
                         fm.load(self._path)
                     self.finished.emit(fm.is_loaded, "")
-                except Exception as exc:
+                except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
                     self.finished.emit(False, str(exc))
 
         worker = _FMLoadWorker(path, _force)
@@ -292,7 +292,7 @@ class _ModelPanelMixin:
             avail = ort.get_available_providers()
             prov_names = [p.replace("ExecutionProvider", "") for p in avail]
             parts.append("ONNX: " + ", ".join(prov_names))
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             parts.append(f"ONNX: error ({exc})")
         gpu_found = bool(prov_names) and any("CUDA" in p or "Dml" in p or "ROCm" in p for p in prov_names)
         self._fm_gpu_label.setText(" | ".join(parts))
@@ -300,3 +300,4 @@ class _ModelPanelMixin:
 
         color = _SUCCESS_DIM if gpu_found else _TM
         self._fm_gpu_label.setStyleSheet(f"color: {color}; font-size: {FONT_SIZE_CAPTION}px;")
+

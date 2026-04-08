@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 
@@ -29,13 +29,10 @@ from frontend.ui_tokens import (
     FONT_SIZE_9,
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
-    FONT_SIZE_LABEL,
     FONT_SIZE_LARGE,
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_SEMIBOLD,
-    RADIUS_6,
-    RADIUS_9,
     RADIUS_MD,
     SIZE_BADGE_H,
     SIZE_BTN_W_XL,
@@ -64,12 +61,9 @@ from frontend.ui_tokens import (
 
 from ._cards import CameraCard
 from ._constants import (
-    _ACCENT,
     _ACCENT_HI,
     _BG_BASE,
     _BG_SURFACE,
-    _BG_OVERLAY,
-    _BORDER,
     _BORDER_DIM,
     _PRIMARY_BTN,
     _STYLESHEET,
@@ -280,7 +274,7 @@ class CameraManagerPage(QWidget):
     def _refresh(self):
         try:
             self._cameras = db.get_cameras() or []
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             logger.exception("Failed to load cameras")
             self._cameras = []
         total = len(self._cameras)
@@ -412,7 +406,7 @@ class CameraManagerPage(QWidget):
         if cam is None:
             try:
                 cam = db.get_camera(cam_id)
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 return
         if cam is None:
             return
@@ -452,10 +446,10 @@ class CameraManagerPage(QWidget):
 
             try:
                 get_camera_manager().stop_camera(cam_id)
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 pass
             db.delete_camera(cam_id)
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             logger.exception("Failed to delete camera %s", cam_id)
             return
         self._active_cam_id = None
@@ -476,10 +470,11 @@ class CameraManagerPage(QWidget):
                             obj.__class__.__name__,
                             obj.windowTitle(),
                         )
-                    except Exception:
+                    except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                         pass
                 return False
 
         self._dlg_logger = _DialogLogger()
         app.installEventFilter(self._dlg_logger)
         logger.info("camera_manager dialog logger installed")
+

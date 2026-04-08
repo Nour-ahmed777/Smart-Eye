@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -29,4 +29,3 @@ def day_timestamp_bounds(start: date, end: date) -> tuple[int, int]:
     start_dt = datetime(start.year, start.month, start.day, 0, 0, 0)
     end_dt = datetime(end.year, end.month, end.day, 23, 59, 59)
     return int(start_dt.timestamp()), int(end_dt.timestamp())
-

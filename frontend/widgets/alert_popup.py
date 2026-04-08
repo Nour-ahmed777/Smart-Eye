@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from PySide6.QtGui import QPainter, QColor, QPen, QBrush
+from PySide6.QtGui import QPainter, QColor, QPen
 
 from frontend.styles._colors import (
     _BG_RAISED,
@@ -56,13 +56,13 @@ class AlertPopup(QFrame):
 
         self.content_frame = QFrame(self)
         self.content_frame.setStyleSheet(
-            f"""
-            QFrame {{
-                background: {_BG_RAISED};
-                border: {SPACE_XXXS}px solid {_DANGER_BORDER_55};
-                border-radius: {RADIUS_18}px;
-            }}
             """
+            QFrame {{
+                background: {bg};
+                border: {border_w}px solid {border};
+                border-radius: {radius}px;
+            }}
+            """.format(bg=_BG_RAISED, border_w=SPACE_XXXS, border=_DANGER_BORDER_55, radius=RADIUS_18)
         )
 
         content_layout = QVBoxLayout(self.content_frame)
@@ -71,29 +71,29 @@ class AlertPopup(QFrame):
 
         title_label = QLabel(title, self.content_frame)
         title_label.setStyleSheet(
-            f"""
+            """
             QLabel {{
-                color: {_DANGER};
-                font-weight: {FONT_WEIGHT_SEMIBOLD};
-                font-size: {FONT_SIZE_HEADING}px;
+                color: {color};
+                font-weight: {weight};
+                font-size: {size}px;
                 background: transparent;
                 border: none;
             }}
-            """
+            """.format(color=_DANGER, weight=FONT_WEIGHT_SEMIBOLD, size=FONT_SIZE_HEADING)
         )
         title_label.setWordWrap(True)
         content_layout.addWidget(title_label)
 
         subtitle_label = QLabel(subtitle, self.content_frame)
         subtitle_label.setStyleSheet(
-            f"""
+            """
             QLabel {{
-                color: {_TEXT_PRI};
-                font-size: {FONT_SIZE_BODY}px;
+                color: {color};
+                font-size: {size}px;
                 background: transparent;
                 border: none;
             }}
-            """
+            """.format(color=_TEXT_PRI, size=FONT_SIZE_BODY)
         )
         subtitle_label.setWordWrap(True)
         content_layout.addWidget(subtitle_label)
@@ -148,5 +148,5 @@ def show_alert(parent: QWidget, title: str, subtitle: str, offset: int = 12) -> 
         anim.setEndValue(end_pos)
         popup._anim = anim
         anim.start()
-    except Exception:
+    except (AttributeError, RuntimeError):
         popup.move(parent.mapToGlobal(QPoint(0, 0)))

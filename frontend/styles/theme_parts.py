@@ -72,7 +72,6 @@ from frontend.ui_tokens import (
     SIZE_ITEM_SM,
     SIZE_SECTION_H,
     SPACE_10,
-    SPACE_14,
     SPACE_18,
     SPACE_20,
     SPACE_22,
@@ -84,9 +83,7 @@ from frontend.ui_tokens import (
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
-    SPACE_XL,
     SPACE_XS,
-    SPACE_XXL,
     SPACE_XXS,
     SPACE_XXXS,
 )
@@ -104,6 +101,10 @@ QMainWindow, QWidget {{
 QLabel {{
     color: {_TEXT_PRI};
     background: transparent;
+    text-decoration: none;
+}}
+QPushButton, QToolButton, QCheckBox, QRadioButton {{
+    text-decoration: none;
 }}
 """
 
@@ -189,20 +190,6 @@ QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled,
 QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
     color: {_TEXT_MUTED};
     background-color: transparent;
-}}
-
-QFrame QLineEdit, QFrame QComboBox, QFrame QSpinBox, QFrame QTextEdit,
-QFrame QLabel, QFrame QPushButton, QFrame QCheckBox {{
-    background-color: transparent;
-    border: none;
-}}
-
-QWidget QLineEdit, QWidget QComboBox, QWidget QSpinBox, QWidget QTextEdit,
-QWidget QLabel, QWidget QPushButton, QWidget QCheckBox,
-QFrame QLineEdit, QFrame QComboBox, QFrame QSpinBox, QFrame QTextEdit,
-QFrame QLabel, QFrame QPushButton, QFrame QCheckBox {{
-    background-color: transparent;
-    border: none;
 }}
 """
 
@@ -378,7 +365,7 @@ QTableWidget, QTableView {{
 }}
 QTableWidget::item, QTableView::item {{
     padding: {SPACE_10}px {SPACE_SM}px;
-    border-bottom: {SPACE_XXXS}px solid {_BG_OVERLAY};
+    border: none;
     background: transparent;
 }}
 QTableWidget::item:selected, QTableView::item:selected {{
@@ -390,8 +377,7 @@ QHeaderView::section {{
         stop:0 {_BG_OVERLAY}, stop:1 {_BG_RAISED});
     color: {_TEXT_DIM};
     border: none;
-    border-bottom: {SPACE_XXXS}px solid {_BORDER_DIM};
-    border-right: {SPACE_XXXS}px solid {_BG_OVERLAY};
+    border: none;
     padding: {SPACE_10}px {SPACE_SM}px;
     font-weight: {FONT_WEIGHT_BOLD};
     font-size: {FONT_SIZE_CAPTION}px;

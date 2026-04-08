@@ -1,1 +1,1 @@
-from ._page import PlaybackPage
+from ._page import PlaybackPage as PlaybackPage

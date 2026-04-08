@@ -1,7 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -22,8 +22,7 @@ from frontend.navigation import nav_keys, nav_label_map
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.widgets.checkbox_style import CHECKBOX_STYLE
-from frontend.app_theme import safe_set_point_size
-from frontend.styles._colors import _BG_CHECK, _BG_NAV_ALT, _BG_NAV_DARK, _TEXT_MUTED, _TEXT_PRI, _TEXT_SEC
+from frontend.styles._colors import _BG_CHECK, _BG_NAV_ALT, _BG_NAV_DARK, _TEXT_PRI, _TEXT_SEC
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
@@ -282,7 +281,7 @@ class AccountsTab(QWidget):
             db.set_setting("auth_onboarded", True)
             if was_bootstrap and not db.get_bool("bootstrap_password_active", False):
                 self.bootstrap_cleared.emit()
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             self._status_lbl.setText(str(exc))
             return
         self._load_accounts()
@@ -429,7 +428,8 @@ class AccountsTab(QWidget):
             return
         try:
             db.delete_account(acc.get("id"))
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
             return
         self._load_accounts()
+

@@ -1,18 +1,16 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
-    QSizePolicy,
     QWidget,
 )
 
-from frontend.styles._btn_styles import _TEXT_BTN_BLUE, _TEXT_BTN_GHOST, _TEXT_BTN_RED, _TEXT_BTN_RED_CONFIRM, _PRIMARY_BTN
+from frontend.styles._btn_styles import _PRIMARY_BTN, _TEXT_BTN_BLUE, _TEXT_BTN_GHOST, _TEXT_BTN_RED, _TEXT_BTN_RED_CONFIRM
 from frontend.app_theme import page_base_styles
 
 from frontend.styles._colors import (
+    _BG_BASE,
     _BG_SURFACE,
     _BG_RAISED,
     _BG_OVERLAY,
@@ -27,39 +25,24 @@ from frontend.styles._colors import (
     _ACCENT_MID_DARK,
     _ACCENT_MID_HOVER,
     _ACCENT_BG_12,
-    _ACCENT_BG_22,
     _ACCENT_HI_BG_03,
-    _ACCENT_HI_BG_10,
-    _ACCENT_HI_BG_12,
     _ACCENT_HI_BG_28,
     _ACCENT_HI_BG_45,
     _ACCENT_HI_BG_55,
     _ACCENT_HI_BG_70,
-    _ACCENT_TINT,
-    _ACCENT_TINT_STRONG,
     _WARNING,
     _WARNING_DIM,
     _WARNING_BG_14,
     _DANGER,
-    _DANGER_DIM,
     _DANGER_BG_14,
-    _DANGER_BORDER_45,
-    _DANGER_TINT,
-    _DANGER_TINT_STRONG,
-    _DANGER_TINT_CONFIRM,
-    _DANGER_TINT_HOVER,
-    _DANGER_TINT_PRESSED,
     _SUCCESS,
-    _BG_BASE,
+    _DANGER_BORDER_45,
     _TEXT_ON_ACCENT,
 )
 from frontend.ui_tokens import (
-    FONT_SIZE_BODY,
-    FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
     FONT_SIZE_MICRO,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_NORMAL,
     FONT_WEIGHT_SEMIBOLD,
     RADIUS_MD,
@@ -71,7 +54,6 @@ from frontend.ui_tokens import (
     SIZE_LABEL_W,
     SIZE_PILL_H,
     SPACE_10,
-    SPACE_14,
     SPACE_20,
     SPACE_28,
     SPACE_5,
@@ -86,6 +68,8 @@ from frontend.ui_tokens import (
     SPACE_XXXS,
 )
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
+from frontend.styles._form_rows import make_labeled_row, make_pill, make_section_divider, make_separator
+from frontend.styles.page_styles import section_kicker_style
 
 _ACTION_BTN_W = SIZE_BTN_W_XS
 _ACTION_BTN_H = SIZE_ITEM_SM
@@ -198,18 +182,11 @@ def _spin_ss() -> str:
 
 
 def _make_separator() -> QFrame:
-    sep = QFrame()
-    sep.setFrameShape(QFrame.Shape.HLine)
-    sep.setStyleSheet(f"background-color: {_BORDER}; border: none; max-height: {SPACE_XXXS}px; margin: {SPACE_XXS}px 0;")
-    return sep
+    return make_separator(f"background-color: {_BORDER}; border: none; max-height: {SPACE_XXXS}px; margin: {SPACE_XXS}px 0;")
 
 
 def _pill(text: str, fg: str, bg: str) -> QLabel:
-    lbl = QLabel(text)
-    lbl.setFixedHeight(SIZE_PILL_H)
-    lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-    lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignHCenter)
-    lbl.setStyleSheet(f"""
+    return make_pill(text, SIZE_PILL_H, f"""
         color: {fg};
         background-color: {bg};
         border: none;
@@ -219,48 +196,41 @@ def _pill(text: str, fg: str, bg: str) -> QLabel:
         font-weight: {FONT_WEIGHT_BOLD};
         letter-spacing: 0.{SPACE_5}px;
     """)
-    return lbl
 
 
 def _make_sdiv(title: str) -> QFrame:
-    fr = QFrame()
-    fr.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-    fr.setStyleSheet(
-        f"QFrame {{ background: {_BG_RAISED}; border-top: {SPACE_XXXS}px solid {_BORDER};"
-        f" border-bottom: {SPACE_XXXS}px solid {_BORDER}; border-left: none; border-right: none; }}"
+    return make_section_divider(
+        title,
+        (
+            f"QFrame {{ background: {_BG_RAISED}; border-top: {SPACE_XXXS}px solid {_BORDER};"
+            f" border-bottom: {SPACE_XXXS}px solid {_BORDER}; border-left: none; border-right: none; }}"
+        ),
+        (
+            f"{section_kicker_style(_TEXT_SEC)} background: transparent; border: none;"
+        ),
+        margins=(SPACE_LG, SPACE_6, SPACE_MD, SPACE_6),
+        expanding=True,
     )
-    row = QHBoxLayout(fr)
-    row.setContentsMargins(SPACE_LG, SPACE_6, SPACE_MD, SPACE_6)
-    lbl = QLabel(title.upper())
-    lbl.setStyleSheet(
-        f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY};"
-        f" letter-spacing: {SPACE_XXS}px; background: transparent; border: none;"
-    )
-    row.addWidget(lbl)
-    row.addStretch()
-    return fr
 
 
 def _srow(label_text: str, widget: QWidget, height: int = 52) -> QFrame:
-    fr = QFrame()
-    fr.setFixedHeight(height)
-    fr.setStyleSheet(f"""
+    return make_labeled_row(
+        label_text,
+        widget,
+        height=height,
+        frame_style=f"""
         QFrame {{
             background:transparent;
             border:none;
             border-bottom:{SPACE_XXXS}px solid {_BORDER_DIM};
         }}
         QFrame:hover {{ background:{_ACCENT_HI_BG_03}; }}
-    """)
-    row = QHBoxLayout(fr)
-    row.setContentsMargins(SPACE_XL, 0, SPACE_XL, 0)
-    row.setSpacing(SPACE_20)
-    lb = QLabel(label_text)
-    lb.setFixedWidth(SIZE_LABEL_W)
-    lb.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-    lb.setStyleSheet(
-        f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px; font-weight:{FONT_WEIGHT_NORMAL};background:transparent; border:none;"
+    """,
+        label_style=(
+            f"color:{_TEXT_SEC}; font-size:{FONT_SIZE_LABEL}px; font-weight:{FONT_WEIGHT_NORMAL};"
+            "background:transparent; border:none;"
+        ),
+        label_width=SIZE_LABEL_W,
+        margins=(SPACE_XL, 0, SPACE_XL, 0),
+        spacing=SPACE_20,
     )
-    row.addWidget(lb)
-    row.addWidget(widget, stretch=1)
-    return fr

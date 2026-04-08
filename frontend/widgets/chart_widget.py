@@ -1,8 +1,12 @@
+import logging
+
 import pyqtgraph as pg
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from frontend.styles._colors import _ACCENT, _BG_RAISED, _SUCCESS_DIM, _TEXT_MUTED, _TEXT_PRI, _TEXT_SEC
 from frontend.ui_tokens import FONT_SIZE_SUBHEAD
+
+logger = logging.getLogger(__name__)
 
 
 class ChartWidget(QWidget):
@@ -20,8 +24,8 @@ class ChartWidget(QWidget):
             self._plot_widget.setTitle(title, color=_TEXT_PRI, size=f"{FONT_SIZE_SUBHEAD}pt")
             try:
                 self._plot_widget.getPlotItem().titleLabel.setVisible(False)
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError):
+                logger.debug("Unable to hide chart title label", exc_info=True)
         self._plot_widget.getAxis("left").setPen(pg.mkPen(_TEXT_MUTED))
         self._plot_widget.getAxis("bottom").setPen(pg.mkPen(_TEXT_MUTED))
         self._plot_widget.getAxis("left").setTextPen(pg.mkPen(_TEXT_SEC))
@@ -29,6 +33,7 @@ class ChartWidget(QWidget):
         self._plot_widget.showGrid(x=True, y=True, alpha=0.15)
         layout.addWidget(self._plot_widget)
         self._plot_items = []
+        self._empty_item = None
 
     def set_line_data(self, x, y, name="", color=_ACCENT, width=2):
         pen = pg.mkPen(color=color, width=width)
@@ -51,6 +56,12 @@ class ChartWidget(QWidget):
         for item in self._plot_items:
             self._plot_widget.removeItem(item)
         self._plot_items.clear()
+        if self._empty_item is not None:
+            try:
+                self._plot_widget.removeItem(self._empty_item)
+            except (AttributeError, RuntimeError):
+                logger.debug("Unable to remove empty-state item", exc_info=True)
+            self._empty_item = None
 
     def set_labels(self, left="", bottom=""):
         self._plot_widget.setLabel("left", left, color=_TEXT_SEC)
@@ -65,3 +76,24 @@ class ChartWidget(QWidget):
 
     def get_plot_widget(self):
         return self._plot_widget
+
+    def clear_x_ticks(self):
+        axis = self._plot_widget.getAxis("bottom")
+        axis.setTicks([[]])
+
+    def set_empty_state(self, text):
+        self.clear_data()
+        self.clear_x_ticks()
+        if not text:
+            return
+        try:
+            item = pg.TextItem(text=text, color=_TEXT_MUTED, anchor=(0.5, 0.5))
+            vb = self._plot_widget.getViewBox()
+            rect = vb.viewRect()
+            if rect is not None:
+                item.setPos(rect.center())
+            vb.addItem(item)
+            self._empty_item = item
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            logger.debug("Unable to set chart empty state", exc_info=True)
+            self._empty_item = None

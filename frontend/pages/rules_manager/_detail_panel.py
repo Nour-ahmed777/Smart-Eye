@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -14,14 +16,11 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.services.rules_service import RulesService
-from frontend.app_theme import safe_set_point_size
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.styles._colors import (
     _ACCENT_HI_BG_20,
     _BORDER_DIM_00,
     _BORDER_DIM_55,
-    _BG_RAISED,
-    _BORDER,
 )
 from ._widgets import build_rule_header
 from frontend.ui_tokens import (
@@ -29,21 +28,15 @@ from frontend.ui_tokens import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
     FONT_SIZE_MICRO,
-    FONT_SIZE_SUBHEAD,
     FONT_WEIGHT_BOLD,
-    RADIUS_LG,
     SIZE_BTN_W_80,
     SIZE_BTN_W_MD,
     SIZE_CONTROL_MD,
     SIZE_LABEL_MIN,
     SIZE_LABEL_W,
     SIZE_ROW_48,
-    SIZE_ROW_56,
     SPACE_10,
-    SPACE_14,
-    SPACE_20,
     SPACE_40,
-    SPACE_6,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
@@ -148,7 +141,7 @@ class RuleDetailPanel(QWidget):
             _a = self._rules_service.get_alarm_actions(self._rule_id)
             if _a:
                 heat_level = max(heat_level, max(int(a.get("escalation_level", 0) or 0) for a in _a) * 3)
-        except Exception:
+        except (sqlite3.Error, RuntimeError, AttributeError, TypeError, ValueError):
             pass
 
         desc = (rule.get("description") or "").strip() or "No description"
@@ -228,7 +221,7 @@ class RuleDetailPanel(QWidget):
             try:
                 c = db.get_camera(cid)
                 return c["name"] if c else f"Camera #{cid}"
-            except Exception:
+            except (sqlite3.Error, RuntimeError, AttributeError, TypeError):
                 return f"Camera #{cid}"
 
         def _zone_name(zid):
@@ -238,7 +231,7 @@ class RuleDetailPanel(QWidget):
                 for z in db.get_zones():
                     if z["id"] == zid:
                         return z["name"]
-            except Exception:
+            except (sqlite3.Error, RuntimeError, AttributeError, TypeError):
                 pass
             return f"Zone #{zid}"
 

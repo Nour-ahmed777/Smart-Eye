@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
 
 from frontend.styles._colors import (
     _ACCENT,
-    _ACCENT_HI,
     _BG_OVERLAY,
     _BG_SURFACE,
     _BORDER,
@@ -23,20 +22,16 @@ from frontend.styles._colors import (
     _TEXT_PRI,
     _TEXT_SEC,
     _TEXT_MUTED,
-    _TEXT_ON_ACCENT,
 )
 from frontend.styles._btn_styles import _PRIMARY_BTN, _TEXT_BTN_GHOST
 from frontend.styles._input_styles import _AUTH_INPUT_LG
+from frontend.styles.page_styles import muted_label_style, text_style
 from frontend.app_theme import safe_set_point_size
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_LABEL,
-    FONT_SIZE_SUBHEAD,
     FONT_SIZE_XXL,
-    FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_SEMIBOLD,
     RADIUS_16,
-    RADIUS_LG,
     RADIUS_SM,
     SIZE_CONTROL_LG,
     SIZE_CONTROL_SM,
@@ -61,7 +56,12 @@ class AuthLoginCard(QFrame):
         self.setFixedWidth(SIZE_DIALOG_W_XL)
 
         self.setStyleSheet(
-            f"QFrame {{ background: {_BG_SURFACE}; border: {SPACE_XXXS}px solid {_BORDER_DIM}; border-radius: {RADIUS_16}px; }}"
+            "QFrame {{ background: {bg}; border: {bw}px solid {border}; border-radius: {radius}px; }}".format(
+                bg=_BG_SURFACE,
+                bw=SPACE_XXXS,
+                border=_BORDER_DIM,
+                radius=RADIUS_16,
+            )
         )
         self._build()
         self.adjustSize()
@@ -76,20 +76,22 @@ class AuthLoginCard(QFrame):
         safe_set_point_size(f, FONT_SIZE_XXL)
         f.setBold(True)
         title.setFont(f)
-        title.setStyleSheet(f"QLabel {{ color: {_TEXT_PRI}; background: transparent; border: none; }}")
+        title.setStyleSheet("QLabel {{ {style} background: transparent; border: none; }}".format(style=text_style(_TEXT_PRI)))
         form.addWidget(title)
 
         form.addSpacing(SPACE_6)
 
         subtitle = QLabel("Use an account created in Settings > Accounts.")
-        subtitle.setStyleSheet(f"QLabel {{ color: {_TEXT_SEC}; background: transparent; border: none; font-size: {FONT_SIZE_BODY}px; }}")
+        subtitle.setStyleSheet(
+            "QLabel {{ {style} background: transparent; border: none; }}".format(style=text_style(_TEXT_SEC, size=FONT_SIZE_BODY))
+        )
         form.addWidget(subtitle)
 
         form.addSpacing(SPACE_SM)
 
         self._error_lbl = QLabel("")
         self._error_lbl.setStyleSheet(
-            f"QLabel {{ color: {_DANGER}; background: transparent; border: none; font-size: {FONT_SIZE_BODY}px; }}"
+            "QLabel {{ {style} background: transparent; border: none; }}".format(style=text_style(_DANGER, size=FONT_SIZE_BODY))
         )
         self._error_lbl.setWordWrap(True)
         self._error_lbl.setVisible(False)
@@ -135,7 +137,7 @@ class AuthLoginCard(QFrame):
         self._hint_lbl = QLabel("")
         self._hint_lbl.setWordWrap(True)
         self._hint_lbl.setStyleSheet(
-            f"QLabel {{ color: {_TEXT_MUTED}; background: transparent; border: none; font-size: {FONT_SIZE_LABEL}px; }}"
+            "QLabel {{ {style} background: transparent; border: none; }}".format(style=muted_label_style(size=FONT_SIZE_LABEL))
         )
         self._hint_lbl.setVisible(False)
         form.addWidget(self._hint_lbl)

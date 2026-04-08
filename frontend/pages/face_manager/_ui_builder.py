@@ -23,12 +23,9 @@ from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_9,
     FONT_SIZE_CAPTION,
-    FONT_SIZE_LABEL,
     FONT_SIZE_LARGE,
     FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_SEMIBOLD,
-    RADIUS_6,
-    RADIUS_9,
     RADIUS_MD,
     SIZE_BADGE_H,
     SIZE_BTN_W_LG,
@@ -48,22 +45,16 @@ from frontend.ui_tokens import (
     SPACE_SM,
     SPACE_XL,
     SPACE_XS,
-    SPACE_XXL,
     SPACE_XXS,
-    SPACE_XXXS,
 )
 
 from ._constants import (
-    _ACCENT,
     _BG_BASE,
-    _BG_OVERLAY,
     _BG_SURFACE,
-    _BORDER,
     _BORDER_DIM,
     _PRIMARY_BTN,
     _TEXT_MUTED,
     _TEXT_PRI,
-    _TEXT_SEC,
 )
 from ._detail_panel import DetailPanel
 

@@ -4,11 +4,11 @@ from PySide6.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout
 from frontend.app_theme import safe_set_point_size
 from frontend.styles._colors import _ACCENT, _TEXT_PRI, _TEXT_MUTED
 from frontend.styles._card_styles import _CARD_BASE
+from frontend.styles.page_styles import muted_label_style, text_style, transparent_surface_style
 from frontend.ui_tokens import (
     FONT_SIZE_LABEL,
     FONT_SIZE_LARGE,
     FONT_SIZE_MICRO,
-    RADIUS_LG,
     SPACE_14,
     SPACE_MD,
     SPACE_SM,
@@ -25,10 +25,10 @@ class StatCardWidget(QFrame):
         self.setMinimumWidth(SIZE_MIN_W_SM)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setStyleSheet(
-            f"""
-            {_CARD_BASE}
-            QFrame:hover {{ border-color: {color}; }}
             """
+            {}
+            QFrame:hover {{ border-color: {}; }}
+            """.format(_CARD_BASE, color)
         )
 
         root = QVBoxLayout(self)
@@ -40,7 +40,7 @@ class StatCardWidget(QFrame):
         safe_set_point_size(title_font, FONT_SIZE_LABEL)
         title_font.setBold(True)
         title_lbl.setFont(title_font)
-        title_lbl.setStyleSheet(f"color: {color}; background: transparent; border: none;")
+        title_lbl.setStyleSheet(text_style(color, extra="{} border: none;".format(transparent_surface_style())))
         root.addWidget(title_lbl)
 
         self._value_label = QLabel(str(value))
@@ -48,11 +48,16 @@ class StatCardWidget(QFrame):
         safe_set_point_size(val_font, FONT_SIZE_LARGE)
         val_font.setBold(True)
         self._value_label.setFont(val_font)
-        self._value_label.setStyleSheet(f"color: {_TEXT_PRI}; background: transparent; border: none;")
+        self._value_label.setStyleSheet(text_style(_TEXT_PRI, extra="{} border: none;".format(transparent_surface_style())))
         root.addWidget(self._value_label)
 
         self._sub_label = QLabel(subtitle)
-        self._sub_label.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; background: transparent; border: none;")
+        self._sub_label.setStyleSheet(
+            "{} {} border: none;".format(
+                muted_label_style(color=_TEXT_MUTED, size=FONT_SIZE_MICRO),
+                transparent_surface_style(),
+            )
+        )
         root.addWidget(self._sub_label)
 
     def set_value(self, value):

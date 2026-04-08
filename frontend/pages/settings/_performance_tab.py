@@ -1,8 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QTimer, QPropertyAnimation
+from PySide6.QtCore import QPropertyAnimation
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.widgets.toggle_switch import ToggleSwitch
-from frontend.widgets.toast import show_toast
 from frontend.styles._colors import _SUCCESS
 from frontend.ui_tokens import (
     FONT_SIZE_LABEL,
@@ -224,14 +223,14 @@ class PerformanceTab(QWidget):
                 bool(db.get_setting("limit_resources", False)),
                 int(db.get_setting("max_threads", 1)),
             )
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             logger.exception("Failed to apply resource limits after save")
 
         try:
             from backend.models import model_loader
 
             model_loader.load_face_model()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             logger.exception("Failed to reload face model after performance settings save")
         if db.get_bool("ui_show_save_popups", False):
             from PySide6.QtWidgets import QMessageBox
@@ -273,3 +272,4 @@ class PerformanceTab(QWidget):
         self._unload_tabs.setChecked(db.get_bool("ui_unload_on_leave", True))
         self._unload_idle_min.setValue(int(db.get_int("ui_unload_idle_min", 5) or 5))
         self._auto_pause_live.setChecked(db.get_bool("auto_pause_live_when_idle", False))
+

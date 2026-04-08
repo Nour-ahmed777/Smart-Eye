@@ -146,6 +146,12 @@ def main():
     from frontend.app_theme import get_theme
 
     app.setStyleSheet(get_theme())
+    try:
+        from frontend.dialogs import patch_messagebox
+
+        patch_messagebox()
+    except Exception:
+        pass
     window = MainWindow()
     window.show()
     try:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
@@ -12,41 +12,29 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.styles._colors import (
-    _ACCENT,
-    _ACCENT_ALT_BG_08,
-    _ACCENT_HI,
     _BG_SURFACE,
-    _BORDER,
     _BORDER_DIM,
     _DANGER,
     _TEXT_PRI,
     _TEXT_SEC,
-    _TEXT_MUTED,
-    _TEXT_ON_ACCENT,
 )
 from frontend.styles._input_styles import _AUTH_INPUT_LG, _AUTH_INPUT_MD
 from frontend.styles._btn_styles import _PRIMARY_BTN, _SECONDARY_BTN
+from frontend.styles.page_styles import text_style
 from frontend.app_theme import safe_set_point_size
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_LABEL,
-    FONT_SIZE_SUBHEAD,
     FONT_SIZE_XXL,
-    FONT_WEIGHT_BOLD,
     FONT_WEIGHT_SEMIBOLD,
     RADIUS_16,
-    RADIUS_LG,
-    RADIUS_MD,
     SIZE_CONTROL_38,
     SIZE_CONTROL_MID,
     SIZE_DIALOG_W_XL,
     SPACE_10,
-    SPACE_14,
     SPACE_20,
-    SPACE_28,
     SPACE_36,
     SPACE_6,
-    SPACE_LG,
     SPACE_MD,
     SPACE_SM,
     SPACE_XL,
@@ -65,7 +53,12 @@ class AuthResetCard(QFrame):
         self.setFixedWidth(SIZE_DIALOG_W_XL)
 
         self.setStyleSheet(
-            f"QFrame {{ background: {_BG_SURFACE}; border: {SPACE_XXXS}px solid {_BORDER_DIM}; border-radius: {RADIUS_16}px; }}"
+            "QFrame {{ background: {bg}; border: {bw}px solid {border}; border-radius: {radius}px; }}".format(
+                bg=_BG_SURFACE,
+                bw=SPACE_XXXS,
+                border=_BORDER_DIM,
+                radius=RADIUS_16,
+            )
         )
         self._build()
         self.adjustSize()
@@ -80,13 +73,15 @@ class AuthResetCard(QFrame):
         safe_set_point_size(f, FONT_SIZE_XXL)
         f.setBold(True)
         title.setFont(f)
-        title.setStyleSheet(f"QLabel {{ color: {_TEXT_PRI}; background: transparent; border: none; }}")
+        title.setStyleSheet("QLabel {{ {style} background: transparent; border: none; }}".format(style=text_style(_TEXT_PRI)))
         form.addWidget(title)
 
         form.addSpacing(SPACE_6)
 
         subtitle = QLabel("Answer your security questions to reset your password.")
-        subtitle.setStyleSheet(f"QLabel {{ color: {_TEXT_SEC}; background: transparent; border: none; font-size: {FONT_SIZE_BODY}px; }}")
+        subtitle.setStyleSheet(
+            "QLabel {{ {style} background: transparent; border: none; }}".format(style=text_style(_TEXT_SEC, size=FONT_SIZE_BODY))
+        )
         form.addWidget(subtitle)
 
         form.addSpacing(SPACE_20)

@@ -45,7 +45,7 @@ def show_toast(parent: QWidget, message: str, duration_ms: int = 1800) -> None:
             parent_rect.top() + parent_rect.height() - toast.height() - 24,
         )
         toast.move(parent.mapToGlobal(target))
-    except Exception:
+    except (AttributeError, RuntimeError):
         pass
 
     toast.show()

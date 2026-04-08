@@ -94,7 +94,7 @@ class ConditionRow(QWidget):
         else:
             try:
                 val = self.value_widget.currentText()
-            except Exception:
+            except AttributeError:
                 val = ""
         return {
             "attribute": self.attr_combo.currentText(),

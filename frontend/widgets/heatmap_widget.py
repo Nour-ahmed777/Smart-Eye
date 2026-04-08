@@ -14,15 +14,7 @@ class HeatmapWidget(QLabel):
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setMinimumSize(320, 240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setStyleSheet(
-            f"""
-            QLabel {{
-                background-color: {_BG_HEATMAP_90};
-                border: {SPACE_XXXS}px solid {_WHITE_04};
-                border-radius: {RADIUS_LG}px;
-            }}
-            """
-        )
+        self.setStyleSheet(self._label_style())
 
     def set_heatmap(self, heatmap_img):
         if heatmap_img is None:
@@ -47,14 +39,32 @@ class HeatmapWidget(QLabel):
     def clear_heatmap(self):
         self.clear()
         self.setText("No Heatmap Data")
-        self.setStyleSheet(
-            f"""
+        self.setStyleSheet(self._label_style(with_text=True))
+
+    def set_placeholder(self, text: str):
+        self.clear()
+        self.setText(text)
+        self.setStyleSheet(self._label_style(with_text=True))
+
+    @staticmethod
+    def _label_style(*, with_text: bool = False) -> str:
+        text_rules = ""
+        if with_text:
+            text_rules = "color: {text}; font-size: {font_size}px;".format(
+                text=_TEXT_FAINT,
+                font_size=FONT_SIZE_SUBHEAD,
+            )
+        return """
             QLabel {{
-                background-color: {_BG_HEATMAP_90};
-                color: {_TEXT_FAINT};
-                font-size: {FONT_SIZE_SUBHEAD}px;
-                border: {SPACE_XXXS}px solid {_WHITE_04};
-                border-radius: {RADIUS_LG}px;
+                background-color: {bg};
+                {text_rules}
+                border: {border_w}px solid {border};
+                border-radius: {radius}px;
             }}
-            """
+        """.format(
+            bg=_BG_HEATMAP_90,
+            text_rules=text_rules,
+            border_w=SPACE_XXXS,
+            border=_WHITE_04,
+            radius=RADIUS_LG,
         )

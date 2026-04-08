@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import (
@@ -12,10 +13,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
     QSizePolicy,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -23,11 +22,8 @@ from backend.repository import db
 from frontend.app_theme import safe_set_point_size
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.styles._colors import (
-    _ACCENT,
     _ACCENT_BG_12,
     _ACCENT_HI,
-    _BG_RAISED,
-    _BORDER,
     _SUCCESS,
     _SUCCESS_BG_14,
     _MUTED_BG_10,
@@ -39,24 +35,22 @@ from frontend.styles._colors import (
 from ._constants import _pill
 from frontend.ui_tokens import (
     FONT_SIZE_CAPTION,
-    FONT_WEIGHT_BOLD,
     RADIUS_7,
-    RADIUS_MD,
     SIZE_CONTROL_22,
     SIZE_CONTROL_MID,
     SIZE_PANEL_SM,
-    SIZE_ROW_XL,
     SPACE_6,
     SPACE_MD,
     SPACE_XS,
-    SPACE_XXXS,
 )
 from frontend.widgets.base.roster_card_base import (
     apply_roster_card_style,
     build_roster_card_layout,
 )
+from frontend.styles.page_styles import muted_label_style, text_style
 
 logger = logging.getLogger(__name__)
+_META_STYLE = muted_label_style(size=FONT_SIZE_CAPTION) + " background: transparent;"
 
 
 class CardPreviewWidget(QWidget):
@@ -101,8 +95,8 @@ class CardPreviewWidget(QWidget):
                     qi = QImage(rgb.data, w, h, w * 3, QImage.Format.Format_RGB888).copy()
                     self._pixmap = QPixmap.fromImage(qi)
                     self.update()
-                except Exception:
-                    pass
+                except (RuntimeError, ValueError, TypeError):
+                    logger.debug("Skipping preview frame conversion cam_id=%s", self._cam_id, exc_info=True)
 
             _timer.timeout.connect(_tick)
             _timer.start()
@@ -111,12 +105,12 @@ class CardPreviewWidget(QWidget):
                 _tm.stop()
                 try:
                     _t.frame_ready.disconnect(_fn)
-                except Exception:
-                    pass
+                except (RuntimeError, TypeError):
+                    logger.debug("Preview disconnect already released cam_id=%s", self._cam_id, exc_info=True)
 
             self.destroyed.connect(_cleanup)
-        except Exception:
-            pass
+        except (ImportError, RuntimeError, OSError):
+            logger.warning("Unable to connect camera preview thread cam_id=%s", self._cam_id, exc_info=True)
 
     def paintEvent(self, _event):
         p = QPainter(self)
@@ -174,7 +168,7 @@ class CameraCard(QFrame):
         face_on = bool(cam.get("face_recognition"))
         try:
             plugins = db.get_camera_plugins(cam["id"])
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
             plugins = []
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -188,7 +182,7 @@ class CameraCard(QFrame):
         safe_set_point_size(name_font, FONT_SIZE_CAPTION)
         name_font.setBold(True)
         name_lbl.setFont(name_font)
-        name_lbl.setStyleSheet(f"color: {_TEXT_PRI if enabled else _TEXT_SEC}; background: transparent;")
+        name_lbl.setStyleSheet(text_style(_TEXT_PRI if enabled else _TEXT_SEC, extra="background: transparent;"))
         info.setSpacing(SPACE_XS)
         info.addWidget(name_lbl)
 
@@ -198,7 +192,7 @@ class CameraCard(QFrame):
         if cam.get("location"):
             meta_parts.append(cam["location"])
         meta_lbl = QLabel(" - ".join(meta_parts) if meta_parts else "--")
-        meta_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
+        meta_lbl.setStyleSheet(_META_STYLE)
         info.addWidget(meta_lbl)
 
         pills.setSpacing(SPACE_6)
@@ -220,8 +214,8 @@ class CameraCard(QFrame):
     def _on_toggle(self, cam_id: int, enabled: bool):
         try:
             db.update_camera(cam_id, enabled=1 if enabled else 0)
-        except Exception:
-            pass
+        except (OSError, ValueError):
+            logger.warning("Failed to update camera enabled state cam_id=%s", cam_id, exc_info=True)
         try:
             from backend.camera.camera_manager import get_camera_manager
 
@@ -230,7 +224,7 @@ class CameraCard(QFrame):
                 cm.start_camera(cam_id)
             else:
                 cm.stop_camera(cam_id)
-        except Exception:
+        except (ImportError, RuntimeError, OSError):
             logger.exception("Failed to toggle camera %s", cam_id)
         if self._on_toggle_changed:
             self._on_toggle_changed()

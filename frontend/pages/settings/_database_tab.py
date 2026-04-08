@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 import math
@@ -596,7 +596,7 @@ class _PurgeWorker(QThread):
 
             _run_migrations(db.get_conn())
             self.finished.emit(True, "")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             self.finished.emit(False, str(exc))
 
 
@@ -790,7 +790,7 @@ class DatabaseTab(QWidget):
             db.vacuum()
             QMessageBox.information(self, "Done", "Database vacuumed successfully.")
             self.load()
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
 
     def _backup_db(self) -> None:
@@ -800,7 +800,7 @@ class DatabaseTab(QWidget):
         try:
             db.backup(path)
             QMessageBox.information(self, "Done", f"Backup saved to:\n{path}")
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
 
     def _on_faucet_clicked(self) -> None:
@@ -823,7 +823,7 @@ class DatabaseTab(QWidget):
             QMessageBox.warning(self, "Purge Error", error_msg)
         try:
             self.load()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         if success:
             self._limit_status_label.setText("Database purged successfully.")
@@ -835,7 +835,7 @@ class DatabaseTab(QWidget):
 
             _run_migrations(db.get_conn())
             self.load()
-        except Exception as exc:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
 
     def _update_tank(self) -> None:
@@ -865,3 +865,4 @@ class DatabaseTab(QWidget):
             self._limit_unit.setCurrentText("MB")
 
         self._update_tank()
+
