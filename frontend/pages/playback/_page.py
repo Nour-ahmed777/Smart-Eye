@@ -1,13 +1,16 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
+import logging
 import os
-from datetime import datetime, timedelta
+import sqlite3
+from datetime import datetime
 
 import cv2
 from PySide6.QtCore import Qt, QSize, QSettings, QTimer, QEvent, QDate
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -18,8 +21,6 @@ from PySide6.QtWidgets import (
     QSlider,
     QSplitter,
     QToolButton,
-    QMenu,
-    QWidgetAction,
     QVBoxLayout,
     QDateEdit,
     QWidget,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
 from backend.camera.playback_thread import PlaybackThread
 from backend.repository import db
 from frontend.app_theme import page_base_styles, safe_set_point_size
+from frontend.dialogs import apply_popup_theme
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.widgets.video_widget import VideoWidget
 
@@ -35,39 +37,43 @@ from frontend.widgets.video_widget import VideoWidget
 from frontend.styles._colors import (
     _ACCENT,
     _ACCENT_BG_18,
-    _ACCENT_BG_22,
-    _ACCENT_BG_12,
     _ACCENT_HI,
     _ACCENT_HI_BG_07,
     _ACCENT_HI_BG_22,
     _ACCENT_HI_BG_45,
     _BG_BASE,
     _BG_OVERLAY,
-    _BG_RAISED,
     _BG_SURFACE,
     _BLACK,
-    _BORDER,
+    _BORDER_DARK,
     _BORDER_DIM,
-    _DANGER,
-    _SUCCESS,
-    _SUCCESS_BG_14,
-    _TEXT_ON_ACCENT,
     _TEXT_MUTED,
     _TEXT_PRI,
     _TEXT_SEC,
 )
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
-from frontend.styles._btn_styles import _PRIMARY_BTN, _ICON_BTN, _ICON_BTN_DANGER, _TEXT_BTN_GHOST
-from frontend.styles.page_styles import header_bar_style, toolbar_style
+from frontend.styles._btn_styles import _PRIMARY_BTN, _SECONDARY_BTN, _ICON_BTN, _ICON_BTN_DANGER
+from frontend.styles._calendar_styles import date_popup_styles
+from frontend.styles.page_styles import (
+    card_shell_style,
+    divider_style,
+    filter_tool_button_style,
+    header_bar_style,
+    muted_label_style,
+    neutral_badge_style,
+    section_kicker_style,
+    text_style,
+    toolbar_style,
+    transparent_surface_style,
+)
 from frontend.pages.playback._widgets import ClipRowWidget
+from frontend.date_utils import day_timestamp_bounds, normalize_date_range, qdate_to_date
 from frontend.ui_tokens import (
     FONT_SIZE_CAPTION,
     FONT_SIZE_HEADING,
     FONT_SIZE_LABEL,
     FONT_SIZE_MICRO,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_HEAVY,
-    FONT_WEIGHT_SEMIBOLD,
     RADIUS_11,
     RADIUS_3,
     RADIUS_6,
@@ -84,10 +90,8 @@ from frontend.ui_tokens import (
     SIZE_PILL_H,
     SIZE_ROW_XL,
     SIZE_SECTION_H,
-    SIZE_TOOLBAR_H,
     SPACE_10,
     SPACE_14,
-    SPACE_18,
     SPACE_20,
     SPACE_5,
     SPACE_6,
@@ -103,43 +107,7 @@ from frontend.ui_tokens import (
 _STYLESHEET = (
     page_base_styles()
     + f"""
-{_FORM_INPUTS}
-{_FORM_COMBO}
-QDateEdit::drop-down {{ border: none; background: transparent; width: {SPACE_20}px; }}
-QDateEdit::down-arrow {{ image: url(frontend/assets/icons/arrow_down.png); width: {SPACE_10}px; height: {SPACE_10}px; }}
-QCalendarWidget QWidget {{ background-color: {_BG_SURFACE}; color: {_TEXT_PRI}; font-size: {FONT_SIZE_LABEL}px; }}
-QCalendarWidget QAbstractItemView {{
-    background-color: {_BG_SURFACE}; color: {_TEXT_PRI};
-    selection-background-color: {_ACCENT}; selection-color: {_TEXT_ON_ACCENT};
-    outline: none;
-}}
-QCalendarWidget QAbstractItemView:disabled {{ color: {_TEXT_MUTED}; }}
-QCalendarWidget QAbstractItemView::item {{
-    text-align: center;
-}}
-QCalendarWidget QToolButton {{
-    background: transparent; color: {_TEXT_PRI};
-    border: none; border-radius: {RADIUS_6}px; padding: {SPACE_XS}px {SPACE_SM}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; font-size: {FONT_SIZE_LABEL}px;
-}}
-QCalendarWidget QToolButton:hover {{ background: {_BG_OVERLAY}; }}
-QCalendarWidget QToolButton#qt_calendar_prevmonth,
-QCalendarWidget QToolButton#qt_calendar_nextmonth {{
-    color: {_ACCENT_HI}; font-size: {FONT_SIZE_LABEL}px; padding: {SPACE_XS}px {SPACE_10}px;
-}}
-QCalendarWidget QSpinBox {{
-    background: {_BG_RAISED}; color: {_TEXT_PRI};
-    border: {SPACE_XXXS}px solid {_BORDER}; border-radius: {RADIUS_6}px; padding: {SPACE_XXS}px {SPACE_6}px; font-size: {FONT_SIZE_LABEL}px;
-}}
-QCalendarWidget QMenu {{
-    background: {_BG_OVERLAY}; color: {_TEXT_PRI};
-    border: {SPACE_XXXS}px solid {_BORDER};
-}}
-QCalendarWidget #qt_calendar_navigationbar {{
-    background: {_BG_RAISED}; padding: {SPACE_XS}px;
-}}
-QCalendarWidget #qt_calendar_calendarview {{
-    background: {_BG_SURFACE};
-}}
+{date_popup_styles()}
 QSlider::groove:horizontal {{
     height: {SPACE_XS}px; background: {_BG_OVERLAY}; border-radius: {RADIUS_XS}px;
 }}
@@ -167,7 +135,8 @@ QListWidget::item:selected {{ background: {_ACCENT_BG_18}; color: {_TEXT_PRI}; }
 QListWidget::item:hover:!selected {{ background: {_ACCENT_HI_BG_07}; color: {_TEXT_PRI}; }}
 QListWidget#clips_list {{ background: {_BG_BASE}; }}
 QListWidget#clips_list::item {{ padding: 0; color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; }}
-QListWidget#clips_list::item:selected {{ color: {_TEXT_PRI}; }}
+QListWidget#clips_list::item:selected {{ background: transparent; color: {_TEXT_PRI}; }}
+QListWidget#clips_list::item:hover:!selected {{ background: transparent; }}
 QListWidget#clips_list {{ padding-bottom: {SPACE_SM}px; }}
 QPushButton#clip_delete {{
     background: transparent;
@@ -185,6 +154,13 @@ QScrollBar::handle:vertical:hover {{ background: {_ACCENT_HI_BG_45}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 """
 )
+
+logger = logging.getLogger(__name__)
+_PLAYBACK_TITLE_STYLE = text_style(_TEXT_PRI)
+_TIME_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_LABEL, extra=f"padding-left: {SPACE_LG}px;")
+_BG_BASE_STYLE = f"background: {_BG_BASE};"
+_VIDEO_CARD_STYLE = f"background: {_BLACK}; border-radius: {RADIUS_LG}px;"
+_SPEED_LABEL_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_CAPTION, weight=FONT_WEIGHT_BOLD)
 
 
 def _icon_btn(icon_path: str, size: int = 36, danger: bool = False) -> QPushButton:
@@ -231,6 +207,8 @@ class PlaybackPage(QWidget):
         self._clip_filter_face = None
         self._clip_filter_from = None
         self._clip_filter_to = None
+        self._clip_filters_dialog: QDialog | None = None
+        self._filters_btn: QToolButton | None = None
         self._build_ui()
         self._load_rule_cameras()
 
@@ -261,30 +239,31 @@ class PlaybackPage(QWidget):
         safe_set_point_size(tf, FONT_SIZE_HEADING)
         tf.setBold(True)
         title.setFont(tf)
-        title.setStyleSheet(f"color: {_TEXT_PRI};")
+        title.setStyleSheet(_PLAYBACK_TITLE_STYLE)
         hl.addWidget(title)
         hl.addStretch()
 
         self._fps_label = QLabel("FPS: —")
-        self._fps_label.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_LABEL}px;")
+        self._fps_label.setStyleSheet(muted_label_style(size=FONT_SIZE_LABEL))
         hl.addWidget(self._fps_label)
 
         self._time_label = QLabel("00:00:00 / 00:00:00")
-        self._time_label.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; padding-left: {SPACE_LG}px;")
+        self._time_label.setStyleSheet(_TIME_LABEL_STYLE)
         hl.addWidget(self._time_label)
         root.addWidget(header_w)
 
         toolbar = QWidget()
-        toolbar.setFixedHeight(SIZE_TOOLBAR_H)
+        toolbar.setFixedHeight(SIZE_HEADER_H)
         toolbar.setStyleSheet(toolbar_style(bg=_BG_SURFACE, border=_BORDER_DIM))
         tl = QHBoxLayout(toolbar)
-        tl.setContentsMargins(SPACE_XL, 0, SPACE_XL, 0)
+        tl.setContentsMargins(SPACE_XL, SPACE_SM, SPACE_XL, SPACE_SM)
         tl.setSpacing(SPACE_MD)
 
         self._path_edit = QLineEdit()
         self._path_edit.setPlaceholderText("Select a video file to begin…")
         self._path_edit.setReadOnly(True)
         self._path_edit.setFixedHeight(SIZE_CONTROL_MD)
+        self._path_edit.setStyleSheet(_FORM_INPUTS)
         _folder_act = self._path_edit.addAction(
             QIcon("frontend/assets/icons/folder.png"),
             QLineEdit.ActionPosition.TrailingPosition,
@@ -294,7 +273,7 @@ class PlaybackPage(QWidget):
 
         _sep1 = QWidget()
         _sep1.setFixedSize(SPACE_XXXS, SPACE_XL)
-        _sep1.setStyleSheet(f"background: {_BORDER_DIM};")
+        _sep1.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         tl.addWidget(_sep1)
 
         det_lbl = QLabel("Detection")
@@ -309,7 +288,7 @@ class PlaybackPage(QWidget):
 
         _sep2 = QWidget()
         _sep2.setFixedSize(SPACE_XXXS, SPACE_XL)
-        _sep2.setStyleSheet(f"background: {_BORDER_DIM};")
+        _sep2.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         tl.addWidget(_sep2)
 
         rec_lbl = QLabel("Auto-Clip")
@@ -325,7 +304,7 @@ class PlaybackPage(QWidget):
 
         _sep3 = QWidget()
         _sep3.setFixedSize(SPACE_XXXS, SPACE_XL)
-        _sep3.setStyleSheet(f"background: {_BORDER_DIM};")
+        _sep3.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         tl.addWidget(_sep3)
 
         rule_lbl = QLabel("Rules")
@@ -334,7 +313,7 @@ class PlaybackPage(QWidget):
         )
         tl.addWidget(rule_lbl)
         self._rule_combo = QComboBox()
-        self._rule_combo.setFixedHeight(SIZE_SECTION_H)
+        self._rule_combo.setFixedHeight(SIZE_CONTROL_MD)
         self._rule_combo.setFixedWidth(SIZE_DIALOG_W)
         self._rule_combo.setStyleSheet(_FORM_COMBO)
         self._rule_combo.currentIndexChanged.connect(self._on_rule_camera_changed)
@@ -342,7 +321,7 @@ class PlaybackPage(QWidget):
         root.addWidget(toolbar)
 
         content = QWidget()
-        content.setStyleSheet(f"background: {_BG_BASE};")
+        content.setStyleSheet(_BG_BASE_STYLE)
         cl = QVBoxLayout(content)
         cl.setContentsMargins(SPACE_20, SPACE_LG, SPACE_20, SPACE_LG)
         cl.setSpacing(SPACE_MD)
@@ -352,18 +331,18 @@ class PlaybackPage(QWidget):
         splitter.setStyleSheet("QSplitter::handle { background: transparent; }")
 
         left = QWidget()
-        left.setStyleSheet("background: transparent;")
+        left.setStyleSheet(transparent_surface_style())
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(SPACE_10)
 
         self._video_widget = VideoWidget()
         self._video_widget.setMinimumSize(480, 280)
-        self._video_widget.setStyleSheet(f"background: {_BLACK}; border-radius: {RADIUS_LG}px;")
+        self._video_widget.setStyleSheet(_VIDEO_CARD_STYLE)
         ll.addWidget(self._video_widget, stretch=1)
 
         ctrl_card = QWidget()
-        ctrl_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        ctrl_card.setStyleSheet(card_shell_style())
         cc = QVBoxLayout(ctrl_card)
         cc.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
         cc.setSpacing(SPACE_10)
@@ -410,27 +389,28 @@ QSlider::handle:horizontal {{
 
         _div = QWidget()
         _div.setFixedSize(SPACE_XXXS, SIZE_PILL_H)
-        _div.setStyleSheet(f"background: {_BORDER_DIM};")
+        _div.setStyleSheet(divider_style(_BORDER_DIM, SIZE_PILL_H))
         ctrl_row.addSpacing(SPACE_6)
         ctrl_row.addWidget(_div)
         ctrl_row.addSpacing(SPACE_6)
 
         speed_lbl = QLabel("Speed")
-        speed_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD};")
+        speed_lbl.setStyleSheet(_SPEED_LABEL_STYLE)
         ctrl_row.addWidget(speed_lbl)
 
         self._speed_combo = QComboBox()
         self._speed_combo.addItems(["0.25×", "0.5×", "1×", "2×", "4×"])
         self._speed_combo.setCurrentIndex(2)
         self._speed_combo.setFixedWidth(SIZE_FIELD_W_XS)
-        self._speed_combo.setFixedHeight(SIZE_SECTION_H)
+        self._speed_combo.setFixedHeight(SIZE_CONTROL_MD)
+        self._speed_combo.setStyleSheet(_FORM_COMBO)
         self._speed_combo.currentIndexChanged.connect(self._change_speed)
         ctrl_row.addWidget(self._speed_combo)
 
         ctrl_row.addStretch()
 
         snap_btn = QPushButton("  Snapshot")
-        snap_btn.setFixedHeight(SIZE_SECTION_H)
+        snap_btn.setFixedHeight(SIZE_CONTROL_MD)
         snap_btn.setStyleSheet(_PRIMARY_BTN)
         snap_btn.clicked.connect(self._save_snapshot)
         ctrl_row.addWidget(snap_btn)
@@ -442,7 +422,7 @@ QSlider::handle:horizontal {{
         right = QWidget()
         right.setMinimumWidth(200)
         right.setMaximumWidth(SIZE_DIALOG_W)
-        right.setStyleSheet("background: transparent;")
+        right.setStyleSheet(transparent_surface_style())
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(0)
@@ -452,37 +432,32 @@ QSlider::handle:horizontal {{
         right_split.setStyleSheet("QSplitter::handle { background: transparent; }")
 
         events_card = QWidget()
-        events_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        events_card.setStyleSheet(card_shell_style())
         ec = QVBoxLayout(events_card)
         ec.setContentsMargins(0, 0, 0, SPACE_MD)
         ec.setSpacing(0)
 
         ev_hdr_w = QWidget()
         ev_hdr_w.setFixedHeight(SIZE_CONTROL_LG)
-        ev_hdr_w.setStyleSheet("background: transparent;")
+        ev_hdr_w.setStyleSheet(transparent_surface_style())
         ev_hdr_l = QHBoxLayout(ev_hdr_w)
         ev_hdr_l.setContentsMargins(SPACE_LG, 0, SPACE_MD, 0)
         ev_hdr_l.setSpacing(SPACE_SM)
 
         ev_title = QLabel("DETECTION EVENTS")
-        ev_title.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        ev_title.setStyleSheet(section_kicker_style())
         ev_hdr_l.addWidget(ev_title)
         ev_hdr_l.addStretch()
 
         self._event_badge = QLabel("0")
         self._event_badge.setFixedSize(SIZE_PILL_H, SIZE_PILL_H)
         self._event_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._event_badge.setStyleSheet(
-            f"background: {_BG_OVERLAY}; color: {_TEXT_MUTED};"
-            f" border-radius: {RADIUS_11}px; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_BOLD};"
-        )
+        self._event_badge.setStyleSheet(neutral_badge_style())
         ev_hdr_l.addWidget(self._event_badge)
         ec.addWidget(ev_hdr_w)
 
         self._events_list = QListWidget()
-        self._events_list.setAlternatingRowColors(True)
+        self._events_list.setAlternatingRowColors(False)
         self._events_list.viewport().setAutoFillBackground(False)
         self._events_list.viewport().setStyleSheet("background: transparent;")
         self._events_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -492,134 +467,39 @@ QSlider::handle:horizontal {{
         right_split.addWidget(events_card)
 
         clips_card = QWidget()
-        clips_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        clips_card.setStyleSheet(card_shell_style())
         ccv = QVBoxLayout(clips_card)
         ccv.setContentsMargins(0, 0, 0, SPACE_MD)
         ccv.setSpacing(0)
 
         clips_hdr_w = QWidget()
         clips_hdr_w.setFixedHeight(SIZE_CONTROL_LG)
-        clips_hdr_w.setStyleSheet("background: transparent;")
+        clips_hdr_w.setStyleSheet(transparent_surface_style())
         clips_hdr_l = QHBoxLayout(clips_hdr_w)
         clips_hdr_l.setContentsMargins(SPACE_LG, 0, SPACE_MD, 0)
         clips_hdr_l.setSpacing(SPACE_SM)
 
         clips_title = QLabel("SAVED CLIPS")
-        clips_title.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        clips_title.setStyleSheet(section_kicker_style())
         clips_hdr_l.addWidget(clips_title)
         clips_hdr_l.addStretch()
         ccv.addWidget(clips_hdr_w)
 
-        filters_btn = QToolButton()
-        filters_btn.setText("Filters")
-        filters_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        filters_btn.setIcon(QIcon("frontend/assets/icons/arrow_down.png"))
-        filters_btn.setIconSize(QSize(SIZE_ICON_10, SIZE_ICON_10))
-        filters_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        filters_btn.setStyleSheet(
-            f"QToolButton {{"
-            f" background: {_BG_RAISED};"
-            f" border: {SPACE_XXXS}px solid {_BORDER};"
-            f" border-radius: {RADIUS_MD}px;"
-            f" padding: 0 {SPACE_14}px;"
-            f" color: {_TEXT_PRI};"
-            f" min-height: {SIZE_SECTION_H}px;"
-            f"}}"
-            f"QToolButton:hover {{ background: {_BG_OVERLAY}; }}"
-            f"QToolButton:pressed {{ background: {_BG_OVERLAY}; }}"
-            f"QToolButton::menu-indicator {{ image: none; }}"
-        )
+        self._filters_btn = QToolButton()
+        self._filters_btn.setText("Filters")
+        self._filters_btn.setIcon(QIcon("frontend/assets/icons/arrow_down.png"))
+        self._filters_btn.setIconSize(QSize(SIZE_ICON_10, SIZE_ICON_10))
+        self._filters_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._filters_btn.setStyleSheet(filter_tool_button_style())
+        self._filters_btn.clicked.connect(self._open_clip_filters_dialog)
+        clips_hdr_l.addWidget(self._filters_btn)
 
-        filters_menu = QMenu(filters_btn)
-        filters_menu.setStyleSheet(
-            f"QMenu {{"
-            f" background: {_BG_RAISED};"
-            f" border: {SPACE_XXXS}px solid {_BORDER};"
-            f" border-radius: {RADIUS_MD}px;"
-            f" padding: {SPACE_XXS}px;"
-            f"}}"
-        )
-        filters_widget = QWidget()
-        filters_widget.setStyleSheet(
-            f"background: {_BG_RAISED}; border-radius: {RADIUS_MD}px; border: {SPACE_XXXS}px solid {_BORDER};"
-        )
-        fl = QVBoxLayout(filters_widget)
-        fl.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
-        fl.setSpacing(SPACE_SM)
-
-        row1 = QHBoxLayout()
-        row1.setSpacing(SPACE_SM)
-        self._clip_filter_face = QLineEdit()
-        self._clip_filter_face.setPlaceholderText("Face label")
-        self._clip_filter_face.setFixedHeight(SIZE_SECTION_H)
-        self._clip_filter_face.setStyleSheet(_FORM_INPUTS)
-        row1.addWidget(self._clip_filter_face, stretch=1)
-
-        self._clip_filter_camera = QComboBox()
-        self._clip_filter_camera.setFixedHeight(SIZE_SECTION_H)
-        self._clip_filter_camera.setStyleSheet(_FORM_COMBO)
-        row1.addWidget(self._clip_filter_camera)
-
-        self._clip_filter_rule = QComboBox()
-        self._clip_filter_rule.setFixedHeight(SIZE_SECTION_H)
-        self._clip_filter_rule.setStyleSheet(_FORM_COMBO)
-        row1.addWidget(self._clip_filter_rule)
-
-        fl.addLayout(row1)
-
-        row2 = QHBoxLayout()
-        row2.setSpacing(SPACE_SM)
-        self._clip_filter_object = QComboBox()
-        self._clip_filter_object.setFixedHeight(SIZE_SECTION_H)
-        self._clip_filter_object.setStyleSheet(_FORM_COMBO)
-        row2.addWidget(self._clip_filter_object)
-
-        self._clip_filter_from = QDateEdit()
-        self._clip_filter_from.setCalendarPopup(True)
-        self._clip_filter_from.setDisplayFormat("yyyy-MM-dd")
-        self._clip_filter_from.setMinimumDate(QDate(1970, 1, 1))
-        self._clip_filter_from.setSpecialValueText("From")
-        self._clip_filter_from.setDate(self._clip_filter_from.minimumDate())
-        self._clip_filter_from.setFixedHeight(SIZE_SECTION_H)
-        self._clip_filter_from.setStyleSheet(_FORM_INPUTS)
-        row2.addWidget(self._clip_filter_from)
-
-        self._clip_filter_to = QDateEdit()
-        self._clip_filter_to.setCalendarPopup(True)
-        self._clip_filter_to.setDisplayFormat("yyyy-MM-dd")
-        self._clip_filter_to.setMinimumDate(QDate(1970, 1, 1))
-        self._clip_filter_to.setSpecialValueText("To")
-        self._clip_filter_to.setDate(self._clip_filter_to.minimumDate())
-        self._clip_filter_to.setFixedHeight(SIZE_SECTION_H)
-        self._clip_filter_to.setStyleSheet(_FORM_INPUTS)
-        row2.addWidget(self._clip_filter_to)
-
-        clear_btn = QPushButton("Clear")
-        clear_btn.setStyleSheet(_TEXT_BTN_GHOST)
-        row2.addWidget(clear_btn)
-        fl.addLayout(row2)
-
-        action = QWidgetAction(filters_menu)
-        action.setDefaultWidget(filters_widget)
-        filters_menu.addAction(action)
-        filters_btn.setMenu(filters_menu)
-        clips_hdr_l.addWidget(filters_btn)
-
+        self._ensure_clip_filters_dialog()
         self._load_clip_filters()
-
-        self._clip_filter_face.textChanged.connect(self._on_clip_filters_changed)
-        self._clip_filter_camera.currentIndexChanged.connect(self._on_clip_filters_changed)
-        self._clip_filter_rule.currentIndexChanged.connect(self._on_clip_filters_changed)
-        self._clip_filter_object.currentIndexChanged.connect(self._on_clip_filters_changed)
-        self._clip_filter_from.dateChanged.connect(self._on_clip_filters_changed)
-        self._clip_filter_to.dateChanged.connect(self._on_clip_filters_changed)
-        clear_btn.clicked.connect(self._clear_clip_filters)
 
         self._clips_list = QListWidget()
         self._clips_list.setObjectName("clips_list")
-        self._clips_list.setAlternatingRowColors(True)
+        self._clips_list.setAlternatingRowColors(False)
         self._clips_list.viewport().setAutoFillBackground(False)
         self._clips_list.viewport().setStyleSheet("background: transparent;")
         self._clips_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -634,7 +514,7 @@ QSlider::handle:horizontal {{
 
         self._clip_status = QLabel("")
         self._clip_status.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; padding: 0 {SPACE_LG}px {SPACE_SM}px {SPACE_LG}px;"
+            f"{muted_label_style(size=FONT_SIZE_MICRO)} padding: 0 {SPACE_LG}px {SPACE_SM}px {SPACE_LG}px;"
         )
         self._clip_status.setWordWrap(True)
         ccv.addWidget(self._clip_status)
@@ -730,16 +610,16 @@ QSlider::handle:horizontal {{
     def _on_detection_toggled(self, state: bool) -> None:
         try:
             db.set_setting("playback_detection_enabled", bool(state))
-        except Exception:
-            pass
+        except (sqlite3.Error, OSError, ValueError):
+            logger.warning("Failed to persist playback detection setting", exc_info=True)
         if self._playback_thread:
             self._playback_thread.set_detection_enabled(state)
 
     def _on_record_toggled(self, state: bool) -> None:
         try:
             db.set_setting("playback_record_enabled", bool(state))
-        except Exception:
-            pass
+        except (sqlite3.Error, OSError, ValueError):
+            logger.warning("Failed to persist playback record setting", exc_info=True)
         if self._playback_thread:
             self._playback_thread.set_record_enabled(state)
 
@@ -749,7 +629,8 @@ QSlider::handle:horizontal {{
             rec = db.get_bool("playback_record_enabled", False)
             self._detect_toggle.setChecked(bool(det))
             self._record_toggle.setChecked(bool(rec))
-        except Exception:
+        except (sqlite3.Error, OSError, ValueError):
+            logger.warning("Failed to load playback toggle settings", exc_info=True)
             self._detect_toggle.setChecked(False)
             self._record_toggle.setChecked(False)
 
@@ -840,13 +721,121 @@ QSlider::handle:horizontal {{
         if path:
             cv2.imwrite(path, self._video_widget._last_frame)
 
+    def _ensure_clip_filters_dialog(self) -> None:
+        if self._clip_filters_dialog is not None:
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Clip Filters")
+        apply_popup_theme(dlg)
+        dlg.setModal(False)
+        dlg.setFixedWidth(700)
+
+        fl = QVBoxLayout(dlg)
+        fl.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        fl.setSpacing(SPACE_SM)
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(SPACE_SM)
+        self._clip_filter_face = QLineEdit()
+        self._clip_filter_face.setPlaceholderText("Face label")
+        self._clip_filter_face.setFixedHeight(SIZE_CONTROL_MD)
+        self._clip_filter_face.setStyleSheet(_FORM_INPUTS)
+        row1.addWidget(self._clip_filter_face, stretch=1)
+
+        self._clip_filter_camera = QComboBox()
+        self._clip_filter_camera.setFixedHeight(SIZE_CONTROL_MD)
+        self._clip_filter_camera.setMinimumWidth(160)
+        self._clip_filter_camera.setStyleSheet(_FORM_COMBO)
+        row1.addWidget(self._clip_filter_camera)
+
+        self._clip_filter_rule = QComboBox()
+        self._clip_filter_rule.setFixedHeight(SIZE_CONTROL_MD)
+        self._clip_filter_rule.setMinimumWidth(160)
+        self._clip_filter_rule.setStyleSheet(_FORM_COMBO)
+        row1.addWidget(self._clip_filter_rule)
+        fl.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setSpacing(SPACE_SM)
+        self._clip_filter_object = QComboBox()
+        self._clip_filter_object.setFixedHeight(SIZE_CONTROL_MD)
+        self._clip_filter_object.setMinimumWidth(160)
+        self._clip_filter_object.setStyleSheet(_FORM_COMBO)
+        row2.addWidget(self._clip_filter_object)
+
+        self._clip_filter_from = QDateEdit()
+        self._clip_filter_from.setCalendarPopup(True)
+        self._clip_filter_from.setDisplayFormat("yyyy-MM-dd")
+        self._clip_filter_from.setMinimumDate(QDate(1970, 1, 1))
+        self._clip_filter_from.setSpecialValueText("From")
+        self._clip_filter_from.setDate(self._clip_filter_from.minimumDate())
+        self._clip_filter_from.setFixedHeight(SIZE_CONTROL_MD)
+        self._clip_filter_from.setMinimumWidth(140)
+        self._clip_filter_from.setStyleSheet(_FORM_INPUTS)
+        row2.addWidget(self._clip_filter_from)
+
+        self._clip_filter_to = QDateEdit()
+        self._clip_filter_to.setCalendarPopup(True)
+        self._clip_filter_to.setDisplayFormat("yyyy-MM-dd")
+        self._clip_filter_to.setMinimumDate(QDate(1970, 1, 1))
+        self._clip_filter_to.setSpecialValueText("To")
+        self._clip_filter_to.setDate(self._clip_filter_to.minimumDate())
+        self._clip_filter_to.setFixedHeight(SIZE_CONTROL_MD)
+        self._clip_filter_to.setMinimumWidth(140)
+        self._clip_filter_to.setStyleSheet(_FORM_INPUTS)
+        row2.addWidget(self._clip_filter_to)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.setFixedHeight(SIZE_CONTROL_MD)
+        clear_btn.setStyleSheet(_SECONDARY_BTN)
+        row2.addWidget(clear_btn)
+        fl.addLayout(row2)
+
+        action_row = QHBoxLayout()
+        action_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.setFixedHeight(SIZE_CONTROL_MD)
+        close_btn.setStyleSheet(_SECONDARY_BTN)
+        close_btn.clicked.connect(dlg.close)
+        action_row.addWidget(close_btn)
+        fl.addLayout(action_row)
+
+        self._clip_filter_face.textChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_camera.currentIndexChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_rule.currentIndexChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_object.currentIndexChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_from.dateChanged.connect(self._on_clip_filters_changed)
+        self._clip_filter_to.dateChanged.connect(self._on_clip_filters_changed)
+        clear_btn.clicked.connect(self._clear_clip_filters)
+
+        self._clip_filters_dialog = dlg
+
+    def _open_clip_filters_dialog(self) -> None:
+        self._ensure_clip_filters_dialog()
+        if not self._clip_filters_dialog:
+            return
+        if self._clip_filters_dialog.isVisible():
+            self._clip_filters_dialog.raise_()
+            self._clip_filters_dialog.activateWindow()
+            return
+        btn = self._filters_btn
+        if btn:
+            pos = btn.mapToGlobal(btn.rect().bottomLeft())
+            dialog_w = self._clip_filters_dialog.width()
+            x = pos.x() - dialog_w + btn.width()
+            y = pos.y() + SPACE_6
+            self._clip_filters_dialog.move(x, y)
+        self._clip_filters_dialog.show()
+
     def _load_clip_filters(self) -> None:
+        if not self._clip_filter_camera:
+            return
         self._clip_filter_camera.clear()
         self._clip_filter_camera.addItem("All Cameras", -1)
         try:
             for cam in db.get_cameras(enabled_only=False) or []:
                 self._clip_filter_camera.addItem(cam.get("name", f"Camera {cam.get('id')}"), int(cam.get("id")))
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
 
         self._clip_filter_rule.clear()
@@ -854,7 +843,7 @@ QSlider::handle:horizontal {{
         try:
             for rule in db.get_rules(enabled_only=False) or []:
                 self._clip_filter_rule.addItem(rule.get("name", "Rule"), rule.get("name", ""))
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
 
         self._clip_filter_object.clear()
@@ -867,7 +856,7 @@ QSlider::handle:horizontal {{
                 if name and name not in seen:
                     seen.add(name)
                     self._clip_filter_object.addItem(name, name)
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
 
     def _on_clip_filters_changed(self, _value=None) -> None:
@@ -893,14 +882,22 @@ QSlider::handle:horizontal {{
         ts_from = None
         ts_to = None
         min_date = self._clip_filter_from.minimumDate()
-        if self._clip_filter_from.date() != min_date:
-            d = self._clip_filter_from.date()
-            dt = datetime(d.year(), d.month(), d.day(), 0, 0, 0)
-            ts_from = int(dt.timestamp())
-        if self._clip_filter_to.date() != min_date:
-            d = self._clip_filter_to.date()
-            dt = datetime(d.year(), d.month(), d.day(), 23, 59, 59)
-            ts_to = int(dt.timestamp())
+        has_from = self._clip_filter_from.date() != min_date
+        has_to = self._clip_filter_to.date() != min_date
+        if has_from and has_to:
+            start = qdate_to_date(self._clip_filter_from.date())
+            end = qdate_to_date(self._clip_filter_to.date())
+            date_range = normalize_date_range(start, end)
+            if date_range.swapped:
+                self._clip_filter_from.setDate(QDate(date_range.start.year, date_range.start.month, date_range.start.day))
+                self._clip_filter_to.setDate(QDate(date_range.end.year, date_range.end.month, date_range.end.day))
+            ts_from, ts_to = day_timestamp_bounds(date_range.start, date_range.end)
+        elif has_from:
+            start = qdate_to_date(self._clip_filter_from.date())
+            ts_from, _ = day_timestamp_bounds(start, start)
+        elif has_to:
+            end = qdate_to_date(self._clip_filter_to.date())
+            _, ts_to = day_timestamp_bounds(end, end)
 
         return {
             "camera_id": camera_id,
@@ -920,20 +917,21 @@ QSlider::handle:horizontal {{
                 cam_id = int(cam_part)
                 ts = int(ts_part.split(".", 1)[0])
                 return cam_id, ts, "live"
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 return None, None, "live"
         if name.startswith("clip_"):
             try:
                 ts = int(name.replace("clip_", "", 1).split(".", 1)[0])
                 return None, ts, "playback"
-            except Exception:
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 return None, None, "playback"
         return None, None, "playback"
 
     def _sync_clips_index(self) -> None:
         try:
             existing = {row.get("path") for row in db.get_clips() or []}
-        except Exception:
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            logger.warning("Failed to read existing clips index", exc_info=True)
             existing = set()
         for folder in ("data/clips_live", "data/clips"):
             if not os.path.isdir(folder):
@@ -948,12 +946,12 @@ QSlider::handle:horizontal {{
                 if ts is None:
                     try:
                         ts = int(os.path.getmtime(path))
-                    except Exception:
+                    except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                         ts = None
                 try:
                     db.add_clip(path, source, cam_id, ts, None, [], [])
-                except Exception:
-                    pass
+                except (sqlite3.Error, OSError, TypeError, ValueError):
+                    logger.warning("Failed to index clip path=%s", path, exc_info=True)
 
     def _refresh_clips_list(self) -> None:
         selected_path = None
@@ -973,7 +971,8 @@ QSlider::handle:horizontal {{
                 object_type=filters["object_type"],
                 rule_triggered=filters["rule_triggered"],
             )
-        except Exception:
+        except (sqlite3.Error, OSError, TypeError, ValueError):
+            logger.warning("Failed to load filtered clips", exc_info=True)
             rows = []
 
         if not rows:
@@ -988,7 +987,7 @@ QSlider::handle:horizontal {{
             if not ts:
                 try:
                     ts = int(os.path.getmtime(path))
-                except Exception:
+                except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                     ts = 0
             source = row.get("source") or "playback"
             name = os.path.splitext(os.path.basename(path))[0]
@@ -1022,10 +1021,13 @@ QSlider::handle:horizontal {{
                 os.remove(path)
             try:
                 db.delete_clip(path)
-            except Exception:
-                pass
+            except (sqlite3.Error, OSError, ValueError):
+                logger.warning("Failed to delete clip from database path=%s", path, exc_info=True)
             self._clip_status.setText(f"Deleted: {os.path.basename(path)}")
-        except Exception as e:
+        except OSError as e:
+            self._clip_status.setText(f"Delete failed: {e}")
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as e:
+            logger.exception("Unexpected clip deletion failure path=%s", path)
             self._clip_status.setText(f"Delete failed: {e}")
         self._refresh_clips_list()
     def _load_rule_cameras(self) -> None:
@@ -1034,7 +1036,7 @@ QSlider::handle:horizontal {{
         cams = []
         try:
             cams = db.get_cameras(enabled_only=True)
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             cams = []
         for cam in cams:
             self._rule_combo.addItem(cam.get("name", f"Camera {cam.get('id')}"), int(cam.get("id")))
@@ -1096,3 +1098,4 @@ QSlider::handle:horizontal {{
         m = int((seconds % 3600) // 60)
         s = int(seconds % 60)
         return f"{h:02d}:{m:02d}:{s:02d}"
+

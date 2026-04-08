@@ -1,1 +1,1 @@
-from ._page import LogsViewerPage
+from ._page import LogsViewerPage as LogsViewerPage

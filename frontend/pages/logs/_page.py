@@ -28,19 +28,17 @@ from PySide6.QtWidgets import (
 )
 
 from backend.repository import db
+from frontend.dialogs import apply_popup_theme
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
-from frontend.app_theme import safe_set_point_size
+from frontend.app_theme import page_base_styles, safe_set_point_size
 from frontend.widgets.toggle_switch import ToggleSwitch
 
 from frontend.styles._colors import (
     _ACCENT,
-    _ACCENT_BG_22,
     _ACCENT_BG_15,
-    _ACCENT_HI,
     _ACCENT_HI_BG_28,
     _ACCENT_HI_BG_55,
     _BG_BASE,
-    _BG_OVERLAY,
     _BG_RAISED,
     _BG_SURFACE,
     _BORDER,
@@ -59,25 +57,28 @@ from frontend.styles._colors import (
 )
 from frontend.styles._input_styles import _FORM_INPUTS, _FORM_COMBO
 from frontend.styles._btn_styles import _PRIMARY_BTN, _SECONDARY_BTN, _DANGER_BTN
-from frontend.styles.page_styles import header_bar_style, toolbar_style
+from frontend.styles._calendar_styles import date_popup_styles
+from frontend.styles.page_styles import (
+    card_shell_style,
+    divider_style,
+    header_bar_style,
+    section_kicker_style,
+    text_style,
+    toolbar_style,
+)
+from frontend.date_utils import normalize_date_range, qdate_to_date
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
     FONT_SIZE_LARGE,
-    FONT_SIZE_MICRO,
     FONT_SIZE_SUBHEAD,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_HEAVY,
     FONT_WEIGHT_NORMAL,
     FONT_WEIGHT_SEMIBOLD,
-    RADIUS_6,
     RADIUS_LG,
-    RADIUS_MD,
     RADIUS_SM,
-    RADIUS_XS,
     SIZE_BTN_W_LG,
-    SIZE_CONTROL_38,
     SIZE_CONTROL_LG,
     SIZE_CONTROL_MD,
     SIZE_DIALOG_W,
@@ -86,7 +87,6 @@ from frontend.ui_tokens import (
     SIZE_HEADER_H,
     SIZE_ICON_LG,
     SIZE_ICON_MD,
-    SIZE_ITEM_SM,
     SIZE_ROW_MD,
     SPACE_10,
     SPACE_14,
@@ -104,15 +104,9 @@ from frontend.ui_tokens import (
     SPACE_XXXS,
 )
 
-_STYLESHEET = f"""
-QWidget {{
-    color: {_TEXT_PRI};
-    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-    font-size: {FONT_SIZE_BODY}px; background-color: transparent;
-}}
-QLabel {{ background: transparent; }}
-{_FORM_INPUTS}
-{_FORM_COMBO}
+_STYLESHEET = (
+    page_base_styles(FONT_SIZE_BODY)
+    + f"""
 QCheckBox {{ color: {_TEXT_PRI}; spacing: {SPACE_SM}px; }}
 QCheckBox::indicator {{
     width: {SPACE_LG}px; height: {SPACE_LG}px; border: {SPACE_XXXS}px solid {_BORDER};
@@ -130,40 +124,34 @@ QScrollBar::handle:vertical {{
 QScrollBar::handle:vertical:hover {{ background: {_ACCENT_HI_BG_55}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 QDialog {{ background-color: {_BG_SURFACE}; }}
-QDateEdit::drop-down {{ border: none; background: transparent; width: {SPACE_20}px; }}
-QDateEdit::down-arrow {{ image: url(frontend/assets/icons/arrow_down.png); width: {SPACE_10}px; height: {SPACE_10}px; }}
-QCalendarWidget QWidget {{ background-color: {_BG_SURFACE}; color: {_TEXT_PRI}; font-size: {FONT_SIZE_LABEL}px; }}
-QCalendarWidget QAbstractItemView {{
-    background-color: {_BG_SURFACE}; color: {_TEXT_PRI};
-    selection-background-color: {_ACCENT}; selection-color: {_TEXT_ON_ACCENT};
-    outline: none;
+{date_popup_styles()}
+"""
+)
+_TITLE_STYLE = text_style(_TEXT_PRI)
+_ARROW_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_LABEL, extra="background: transparent;")
+_BG_BASE_STYLE = f"background: {_BG_BASE};"
+_DETAIL_LABEL_STYLE = text_style(_TEXT_PRI, size=FONT_SIZE_SUBHEAD)
+_TABLE_HEADER_SEP_STYLE = divider_style(_BORDER_DIM)
+_TABLE_COMPACT_STYLE = f"""
+QTableWidget {{ background: transparent; border: none; outline: none; }}
+QTableWidget::item {{
+    padding: {SPACE_SM}px {SPACE_SM}px; border: none;
 }}
-QCalendarWidget QAbstractItemView:disabled {{ color: {_TEXT_MUTED}; }}
-QCalendarWidget QAbstractItemView::item {{
-    text-align: center;
+QTableWidget::item:selected {{
+    background-color: {_ACCENT_BG_15}; color: {_TEXT_PRI};
 }}
-QCalendarWidget QToolButton {{
-    background: transparent; color: {_TEXT_PRI};
-    border: none; border-radius: {RADIUS_6}px; padding: {SPACE_XS}px {SPACE_SM}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; font-size: {FONT_SIZE_LABEL}px;
+QHeaderView::section {{
+    background-color: transparent; color: {_TEXT_SEC};
+    padding: {SPACE_10}px {SPACE_LG}px; border: none;
+    font-weight: {FONT_WEIGHT_SEMIBOLD}; font-size: {FONT_SIZE_CAPTION}px; letter-spacing: 0.{SPACE_5}px;
 }}
-QCalendarWidget QToolButton:hover {{ background: {_BG_OVERLAY}; }}
-QCalendarWidget QToolButton#qt_calendar_prevmonth,
-QCalendarWidget QToolButton#qt_calendar_nextmonth {{
-    color: {_ACCENT_HI}; font-size: {FONT_SIZE_SUBHEAD}px; padding: {SPACE_XS}px {SPACE_10}px;
-}}
-QCalendarWidget QSpinBox {{
-    background: {_BG_RAISED}; color: {_TEXT_PRI};
-    border: {SPACE_XXXS}px solid {_BORDER}; border-radius: {RADIUS_6}px; padding: {SPACE_XXS}px {SPACE_6}px; font-size: {FONT_SIZE_LABEL}px;
-}}
-QCalendarWidget QMenu {{
-    background: {_BG_OVERLAY}; color: {_TEXT_PRI};
-    border: {SPACE_XXXS}px solid {_BORDER};
-}}
-QCalendarWidget #qt_calendar_navigationbar {{
-    background: {_BG_RAISED}; padding: {SPACE_XS}px;
-}}
-QCalendarWidget #qt_calendar_calendarview {{
-    background: {_BG_SURFACE};
+"""
+_DETAIL_TEXT_STYLE = f"""
+QTextEdit {{
+    background: transparent; border: none;
+    color: {_TEXT_PRI}; padding: {SPACE_MD}px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: {FONT_SIZE_LABEL}px;
 }}
 """
 
@@ -196,7 +184,7 @@ class LogsViewerPage(QWidget):
         safe_set_point_size(title_font, FONT_SIZE_LARGE)
         title_font.setBold(True)
         title.setFont(title_font)
-        title.setStyleSheet(f"color: {_TEXT_PRI};")
+        title.setStyleSheet(_TITLE_STYLE)
         hl.addWidget(title)
         hl.addStretch()
         root.addWidget(header_w)
@@ -205,7 +193,7 @@ class LogsViewerPage(QWidget):
         filter_bar1.setFixedHeight(SIZE_HEADER_H)
         filter_bar1.setStyleSheet(toolbar_style(bg=_BG_SURFACE, border=_BORDER_DIM))
         fl1 = QHBoxLayout(filter_bar1)
-        fl1.setContentsMargins(SPACE_20, 0, SPACE_20, 0)
+        fl1.setContentsMargins(SPACE_20, SPACE_SM, SPACE_20, SPACE_SM)
         fl1.setSpacing(0)
 
         self._date_from = QDateEdit()
@@ -214,6 +202,7 @@ class LogsViewerPage(QWidget):
         self._date_from.setDisplayFormat("MMM dd, yyyy")
         self._date_from.setFixedHeight(SIZE_CONTROL_MD)
         self._date_from.setMinimumWidth(SIZE_FIELD_W)
+        self._date_from.setStyleSheet(_FORM_INPUTS)
         _cal_from = self._date_from.calendarWidget()
         _cal_from.setMinimumSize(400, 300)
         _cal_from.setGridVisible(False)
@@ -225,7 +214,7 @@ class LogsViewerPage(QWidget):
         fl1.addWidget(self._date_from)
 
         _arr = QLabel("→")
-        _arr.setStyleSheet(f"color: {_TEXT_MUTED}; background: transparent; font-size: {FONT_SIZE_LABEL}px;")
+        _arr.setStyleSheet(_ARROW_STYLE)
         _arr.setFixedWidth(SIZE_ICON_MD)
         _arr.setAlignment(Qt.AlignmentFlag.AlignCenter)
         fl1.addWidget(_arr)
@@ -236,6 +225,7 @@ class LogsViewerPage(QWidget):
         self._date_to.setDisplayFormat("MMM dd, yyyy")
         self._date_to.setFixedHeight(SIZE_CONTROL_MD)
         self._date_to.setMinimumWidth(SIZE_FIELD_W)
+        self._date_to.setStyleSheet(_FORM_INPUTS)
         _cal_to = self._date_to.calendarWidget()
         _cal_to.setMinimumSize(400, 300)
         _cal_to.setGridVisible(False)
@@ -249,7 +239,7 @@ class LogsViewerPage(QWidget):
         fl1.addSpacing(SPACE_14)
         _fs1 = QWidget()
         _fs1.setFixedSize(SPACE_XXXS, SPACE_XL)
-        _fs1.setStyleSheet(f"background: {_BORDER_DIM};")
+        _fs1.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         fl1.addWidget(_fs1)
         fl1.addSpacing(SPACE_14)
 
@@ -257,6 +247,7 @@ class LogsViewerPage(QWidget):
         self._camera_combo.addItem("All cameras", None)
         self._camera_combo.setFixedHeight(SIZE_CONTROL_MD)
         self._camera_combo.setMinimumWidth(SIZE_FIELD_W)
+        self._camera_combo.setStyleSheet(_FORM_COMBO)
         fl1.addWidget(self._camera_combo)
         fl1.addSpacing(SPACE_SM)
 
@@ -264,25 +255,27 @@ class LogsViewerPage(QWidget):
         self._type_combo.addItems(["All types", "face", "object", "violation"])
         self._type_combo.setFixedHeight(SIZE_CONTROL_MD)
         self._type_combo.setMinimumWidth(SIZE_FIELD_W_SM)
+        self._type_combo.setStyleSheet(_FORM_COMBO)
         fl1.addWidget(self._type_combo)
 
         fl1.addSpacing(SPACE_14)
         _fs2 = QWidget()
         _fs2.setFixedSize(SPACE_XXXS, SPACE_XL)
-        _fs2.setStyleSheet(f"background: {_BORDER_DIM};")
+        _fs2.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         fl1.addWidget(_fs2)
         fl1.addSpacing(SPACE_14)
 
         self._search_edit = QLineEdit()
         self._search_edit.setPlaceholderText("Search identity or class…")
         self._search_edit.setFixedHeight(SIZE_CONTROL_MD)
+        self._search_edit.setStyleSheet(_FORM_INPUTS)
         self._search_edit.returnPressed.connect(self._refresh)
         fl1.addWidget(self._search_edit, stretch=1)
 
         fl1.addSpacing(SPACE_14)
         _fs3 = QWidget()
         _fs3.setFixedSize(SPACE_XXXS, SPACE_XL)
-        _fs3.setStyleSheet(f"background: {_BORDER_DIM};")
+        _fs3.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         fl1.addWidget(_fs3)
         fl1.addSpacing(SPACE_10)
 
@@ -326,7 +319,7 @@ class LogsViewerPage(QWidget):
         fl1.addSpacing(SPACE_14)
         _fs4 = QWidget()
         _fs4.setFixedSize(SPACE_XXXS, SPACE_XL)
-        _fs4.setStyleSheet(f"background: {_BORDER_DIM};")
+        _fs4.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         fl1.addWidget(_fs4)
         fl1.addSpacing(SPACE_MD)
 
@@ -344,7 +337,7 @@ class LogsViewerPage(QWidget):
         root.addWidget(filter_bar1)
 
         content_w = QWidget()
-        content_w.setStyleSheet(f"background: {_BG_BASE};")
+        content_w.setStyleSheet(_BG_BASE_STYLE)
         layout = QVBoxLayout(content_w)
         layout.setContentsMargins(SPACE_20, SPACE_MD, SPACE_20, SPACE_MD)
         layout.setSpacing(SPACE_MD)
@@ -355,7 +348,7 @@ class LogsViewerPage(QWidget):
         splitter.setStyleSheet("QSplitter::handle { background: transparent; }")
 
         table_card = QWidget()
-        table_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        table_card.setStyleSheet(card_shell_style())
         table_vbox = QVBoxLayout(table_card)
         table_vbox.setContentsMargins(0, 0, 0, 0)
         table_vbox.setSpacing(0)
@@ -367,9 +360,7 @@ class LogsViewerPage(QWidget):
         tbl_hdr_l.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
         tbl_hdr_l.setSpacing(SPACE_10)
         tbl_title = QLabel("LOG ENTRIES")
-        tbl_title.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        tbl_title.setStyleSheet(section_kicker_style())
         tbl_hdr_l.addWidget(tbl_title)
         tbl_hdr_l.addStretch()
         self._count_label = QLabel("0 logs")
@@ -380,7 +371,7 @@ class LogsViewerPage(QWidget):
         table_vbox.addWidget(tbl_hdr_w)
         tbl_sep = QFrame()
         tbl_sep.setFixedHeight(SPACE_XXXS)
-        tbl_sep.setStyleSheet(f"background: {_BORDER_DIM};")
+        tbl_sep.setStyleSheet(_TABLE_HEADER_SEP_STYLE)
         table_vbox.addWidget(tbl_sep)
 
         self._table = QTableWidget()
@@ -400,20 +391,7 @@ class LogsViewerPage(QWidget):
         self._table.verticalHeader().setDefaultSectionSize(SIZE_CONTROL_LG)
         self._table.setShowGrid(False)
         self._table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._table.setStyleSheet(f"""
-            QTableWidget {{ background: transparent; border: none; outline: none; }}
-            QTableWidget::item {{
-                padding: {SPACE_SM}px {SPACE_SM}px; border-bottom: {SPACE_XXXS}px solid {_BG_OVERLAY};
-            }}
-            QTableWidget::item:selected {{
-                background-color: {_ACCENT_BG_15}; color: {_TEXT_PRI};
-            }}
-            QHeaderView::section {{
-                background-color: transparent; color: {_TEXT_SEC};
-                padding: {SPACE_10}px {SPACE_LG}px; border: none;
-                font-weight: {FONT_WEIGHT_SEMIBOLD}; font-size: {FONT_SIZE_CAPTION}px; letter-spacing: 0.{SPACE_5}px;
-            }}
-        """)
+        self._table.setStyleSheet(_TABLE_COMPACT_STYLE)
         self._table.currentCellChanged.connect(self._on_row_selected)
         table_vbox.addWidget(self._table)
 
@@ -427,7 +405,7 @@ class LogsViewerPage(QWidget):
         splitter.addWidget(table_card)
 
         detail_card = QWidget()
-        detail_card.setStyleSheet(f"background: {_BG_RAISED}; border-radius: {RADIUS_LG}px;")
+        detail_card.setStyleSheet(card_shell_style())
         detail_vbox = QVBoxLayout(detail_card)
         detail_vbox.setContentsMargins(0, 0, 0, 0)
         detail_vbox.setSpacing(0)
@@ -439,27 +417,18 @@ class LogsViewerPage(QWidget):
         det_hdr_l.setContentsMargins(SPACE_LG, 0, SPACE_LG, 0)
         det_hdr_l.setSpacing(SPACE_SM)
         det_title = QLabel("LOG DETAILS")
-        det_title.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_HEAVY}; letter-spacing: {SPACE_XXXS}px;"
-        )
+        det_title.setStyleSheet(section_kicker_style())
         det_hdr_l.addWidget(det_title)
         det_hdr_l.addStretch()
         detail_vbox.addWidget(det_hdr_w)
         det_sep = QFrame()
         det_sep.setFixedHeight(SPACE_XXXS)
-        det_sep.setStyleSheet(f"background: {_BORDER_DIM};")
+        det_sep.setStyleSheet(_TABLE_HEADER_SEP_STYLE)
         detail_vbox.addWidget(det_sep)
 
         self._detail_text = QTextEdit()
         self._detail_text.setReadOnly(True)
-        self._detail_text.setStyleSheet(f"""
-            QTextEdit {{
-                background: transparent; border: none;
-                color: {_TEXT_PRI}; padding: {SPACE_MD}px;
-                font-family: 'Consolas', 'Courier New', monospace;
-                font-size: {FONT_SIZE_LABEL}px;
-            }}
-        """)
+        self._detail_text.setStyleSheet(_DETAIL_TEXT_STYLE)
         detail_vbox.addWidget(self._detail_text)
         splitter.addWidget(detail_card)
 
@@ -499,8 +468,12 @@ class LogsViewerPage(QWidget):
             self._auto_timer.stop()
 
     def _refresh(self):
-        date_from = self._date_from.date().toString("yyyy-MM-dd")
-        date_to = self._date_to.date().toString("yyyy-MM-dd")
+        date_range = normalize_date_range(qdate_to_date(self._date_from.date()), qdate_to_date(self._date_to.date()))
+        if date_range.swapped:
+            self._date_from.setDate(QDate(date_range.start.year, date_range.start.month, date_range.start.day))
+            self._date_to.setDate(QDate(date_range.end.year, date_range.end.month, date_range.end.day))
+        date_from = date_range.start.strftime("%Y-%m-%d")
+        date_to = date_range.end.strftime("%Y-%m-%d")
         camera_id = self._camera_combo.currentData()
         log_type = self._type_combo.currentText()
         search = self._search_edit.text().strip()
@@ -579,12 +552,13 @@ class LogsViewerPage(QWidget):
         dlg = QDialog(self)
         dlg.setWindowTitle("Cleanup Old Logs")
         dlg.setMinimumWidth(SIZE_DIALOG_W)
+        apply_popup_theme(dlg)
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(SPACE_XL, SPACE_20, SPACE_XL, SPACE_20)
         layout.setSpacing(SPACE_LG)
 
         desc = QLabel("Delete logs older than:")
-        desc.setStyleSheet(f"color: {_TEXT_PRI}; font-size: {FONT_SIZE_SUBHEAD}px;")
+        desc.setStyleSheet(_DETAIL_LABEL_STYLE)
         layout.addWidget(desc)
 
         days_spin = QSpinBox()
@@ -592,13 +566,15 @@ class LogsViewerPage(QWidget):
         days_spin.setValue(30)
         days_spin.setSuffix(" days")
         days_spin.setFixedHeight(SIZE_ROW_MD)
+        days_spin.setStyleSheet(_FORM_INPUTS)
         layout.addWidget(days_spin)
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(SPACE_10)
+        btn_row.addStretch()
 
         delete_btn = ConfirmDeleteButton("Delete", "Sure?")
-        delete_btn.setFixedHeight(SIZE_CONTROL_38)
+        delete_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
 
         def do_delete():
             cutoff = (datetime.now() - timedelta(days=days_spin.value())).isoformat()
@@ -611,7 +587,7 @@ class LogsViewerPage(QWidget):
         btn_row.addWidget(delete_btn)
 
         cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(SIZE_CONTROL_38)
+        cancel_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
         cancel_btn.setStyleSheet(_SECONDARY_BTN)
         cancel_btn.clicked.connect(dlg.reject)
         btn_row.addWidget(cancel_btn)
