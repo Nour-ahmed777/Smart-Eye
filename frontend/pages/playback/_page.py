@@ -595,7 +595,11 @@ QSlider::handle:horizontal {{
     def _on_detection_event(self, camera_id, frame_idx, event_data) -> None:
         self._events.append((frame_idx, event_data))
         rules = event_data.get("triggered_rules") or []
-        desc = ", ".join(rules) if rules else f"Frame {frame_idx}"
+        detections = (event_data or {}).get("detections", {}) or {}
+        identity = (event_data or {}).get("identity") or detections.get("identity") or "unknown"
+        gender = detections.get("gender") or "unknown"
+        base = ", ".join(rules) if rules else f"Frame {frame_idx}"
+        desc = f"{base} - {identity} ({str(gender).title()})"
         self._events_list.addItem(QListWidgetItem(f"[{frame_idx}]  {desc}"))
         self._event_badge.setText(str(len(self._events)))
 

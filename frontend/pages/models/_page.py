@@ -442,6 +442,9 @@ class ModelsPage(QWidget):
         self._fm_model_status = QLabel("Checking…")
         self._fm_model_status.setStyleSheet(_STATUS_DEFAULT_STYLE)
         st_row.addWidget(self._fm_model_status, stretch=1)
+        self._fm_gender_status = QLabel("Gender: unknown")
+        self._fm_gender_status.setStyleSheet(_STATUS_DEFAULT_STYLE)
+        st_row.addWidget(self._fm_gender_status)
         cl.addLayout(st_row)
 
         self._fm_buffalo_combo = QComboBox()
@@ -729,12 +732,14 @@ class ModelsPage(QWidget):
         if fm.is_loaded:
             providers_str = ", ".join(p.replace("ExecutionProvider", "") for p in (fm.providers_used or [])) or "CPU"
             self._fm_status_dot.setStyleSheet(_DOT_OK_STYLE)
-            self._fm_model_status.setText(f"{fm.model_name} — {providers_str}")
+            self._fm_model_status.setText(f"{fm.model_name} - {providers_str}")
             self._fm_model_status.setStyleSheet(_STATUS_OK_STYLE)
         else:
             self._fm_status_dot.setStyleSheet(_DOT_ERR_STYLE)
             self._fm_model_status.setText("Not loaded")
             self._fm_model_status.setStyleSheet(_STATUS_ERR_STYLE)
+        self._fm_gender_status.setText("Gender: unknown")
+        self._fm_gender_status.setStyleSheet(_STATUS_DEFAULT_STYLE)
         with contextlib.suppress(Exception):
             self._fm_model_path.setText(db.get_setting("insightface_model_dir", ""))
         with contextlib.suppress(Exception):
@@ -776,6 +781,24 @@ class ModelsPage(QWidget):
 
         fm = get_face_model()
         submodels = fm.get_submodel_status()
+
+        gender_row = next((sm for sm in submodels if sm.get("task") == "genderage"), None) if submodels else None
+        if gender_row:
+            if not db.get_bool("gender_inference_enabled", True):
+                self._fm_gender_status.setText("Gender: disabled in settings")
+                self._fm_gender_status.setStyleSheet(_STATUS_WARN_STYLE)
+            elif gender_row.get("loaded") and gender_row.get("enabled"):
+                self._fm_gender_status.setText("Gender: ready")
+                self._fm_gender_status.setStyleSheet(_STATUS_OK_STYLE)
+            elif gender_row.get("enabled"):
+                self._fm_gender_status.setText("Gender: enabled, not loaded")
+                self._fm_gender_status.setStyleSheet(_STATUS_WARN_STYLE)
+            else:
+                self._fm_gender_status.setText("Gender: disabled")
+                self._fm_gender_status.setStyleSheet(_STATUS_WARN_STYLE)
+        else:
+            self._fm_gender_status.setText("Gender: submodel missing")
+            self._fm_gender_status.setStyleSheet(_STATUS_ERR_STYLE)
 
         if not submodels:
             placeholder = QLabel(
