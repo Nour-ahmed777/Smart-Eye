@@ -1,4 +1,4 @@
-import contextlib
+﻿import contextlib
 import logging
 import warnings
 from pathlib import Path
@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from backend.camera.camera_manager import get_camera_manager
 from backend.repository import db
 from backend.models import model_loader
-from frontend.app_theme import safe_set_point_size
+from frontend.app_theme import page_base_styles, safe_set_point_size
 from frontend.widgets.alarm_badge_widget import AlarmBadgeWidget
 from frontend.widgets.multi_feed_widget import MultiFeedWidget
 from frontend.widgets.performance_widget import PerformanceWidget
@@ -32,12 +32,10 @@ from frontend.styles._colors import (
     _BG_OVERLAY,
     _BORDER,
     _BORDER_DIM,
-    _TEXT_PRI,
     _TEXT_SEC,
     _TEXT_MUTED,
     _ACCENT,
     _ACCENT_HI,
-    _ACCENT_BG_12,
     _DANGER_BG_18,
     _DANGER_BORDER_40_ALT,
     _SUCCESS,
@@ -58,22 +56,18 @@ from frontend.ui_tokens import (
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_SEMIBOLD,
     RADIUS_LG,
-    RADIUS_MD,
     RADIUS_XL,
     SIZE_BTN_W_135,
     SIZE_CONTROL_18,
     SIZE_CONTROL_MD,
     SIZE_CONTROL_XS,
-    SIZE_FIELD_W_SM,
     SIZE_HEADER_H,
-    SIZE_ICON_12,
     SIZE_ICON_LG,
     SIZE_PANEL_MIN,
     SPACE_10,
     SPACE_14,
     SPACE_20,
     SPACE_5,
-    SPACE_6,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
@@ -90,15 +84,13 @@ logger = logging.getLogger(__name__)
 class DashboardPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(f"""
-            QWidget {{
-                color: {_TEXT_PRI};
-                font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
-                font-size: {FONT_SIZE_BODY}px;
-            }}
+        self.setStyleSheet(
+            page_base_styles(FONT_SIZE_BODY)
+            + f"""
             QScrollArea {{ border: none; background-color: transparent; }}
             {_FORM_COMBO}
-        """)
+        """
+        )
 
         self._alarm_badges = {}
         self._state_labels = {}
@@ -417,7 +409,7 @@ class DashboardPage(QWidget):
         try:
             mgr = get_camera_manager()
             online = sum(1 for c in cams if (t := mgr.get_thread(c["id"])) is not None and getattr(t, "isRunning", lambda: False)())
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         offline = max(0, total - online)
         self._hud_online.setText(f"ONLINE: {online}")
@@ -428,7 +420,7 @@ class DashboardPage(QWidget):
         try:
             mgr = get_camera_manager()
             active_ids = mgr.get_active_ids()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             active_ids = []
         for cid in active_ids:
             thread = None
@@ -498,14 +490,14 @@ class DashboardPage(QWidget):
     def _update_providers(self):
         try:
             items = model_loader.get_provider_summary()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             items = []
         try:
             mon = get_monitor()
             gpu_name = mon.gpu_name
             cpu_name = mon.cpu_name
             cpu_name_long = mon.cpu_name_long
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             gpu_name = ""
             cpu_name = ""
             cpu_name_long = ""
@@ -539,7 +531,7 @@ class DashboardPage(QWidget):
                 if wid not in active_ids:
                     self._multi_feed.remove_feed(wid)
             self._update_hud_counts()
-        except Exception:
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             logger.debug("Failed to sync feeds", exc_info=True)
 
     def _refresh_alarm_badge(self):
@@ -585,3 +577,4 @@ class DashboardPage(QWidget):
         self._stat_total.set_value(str(total))
         self._stat_violations.set_value(str(violations))
         self._stat_compliance.set_value(f"{rate:.0f}%")
+
