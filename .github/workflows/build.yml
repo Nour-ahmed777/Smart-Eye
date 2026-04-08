@@ -26,6 +26,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Remove duplicate top-level insightface path
+        shell: pwsh
+        run: |
+          $pythonRoot = (python -c "import sys; print(sys.prefix)").Trim()
+          $topLevelInsightface = Join-Path $pythonRoot "insightface"
+
+          if (Test-Path $topLevelInsightface) {
+            Write-Host "Removing duplicate package path: $topLevelInsightface"
+            Remove-Item -Path $topLevelInsightface -Recurse -Force
+            Write-Host "Done."
+          } else {
+            Write-Host "No duplicate top-level insightface path detected"
+          }
+
+          python -c "import insightface, sys; print('Python prefix:', sys.prefix); print('insightface module:', insightface.__file__)"
+
       - name: Check for model bundle
         id: check_models
         shell: pwsh
@@ -36,7 +52,7 @@ jobs:
       - name: Build with Nuitka
         uses: Nuitka/Nuitka-Action@main
         with:
-          nuitka-version: main
+          nuitka-version: 2.7.11
           script-name: main.py
           mode: standalone
           output-dir: build
