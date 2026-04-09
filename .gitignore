@@ -33,6 +33,7 @@ data/backups/*
 data/face_inbox/*
 data/clips/*
 data/clips_live/*
+data/cache/*
 
 tests/
 docs/
