@@ -13,12 +13,12 @@ def _build_shadow(color_hex: str, alpha: int, blur: int, offset_x: int, offset_y
 
 
 def apply_shadow_float(widget, color_hex: str):
-    shadow = _build_shadow(color_hex, alpha=50, blur=26, offset_x=0, offset_y=6, parent=widget)
+    shadow = _build_shadow(color_hex, alpha=38, blur=16, offset_x=0, offset_y=3, parent=widget)
     widget.setGraphicsEffect(shadow)
     return shadow
 
 
 def apply_shadow_glow(widget, color_hex: str):
-    shadow = _build_shadow(color_hex, alpha=180, blur=42, offset_x=0, offset_y=0, parent=widget)
+    shadow = _build_shadow(color_hex, alpha=68, blur=14, offset_x=0, offset_y=0, parent=widget)
     widget.setGraphicsEffect(shadow)
     return shadow

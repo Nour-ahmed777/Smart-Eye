@@ -37,7 +37,7 @@ from frontend.styles._colors import (
     _WHITE_03,
     _WHITE_04,
 )
-from frontend.styles._shadows import apply_shadow_glow
+from frontend.styles._shadows import apply_shadow_float
 from frontend.styles.page_styles import muted_label_style, text_style, transparent_surface_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
@@ -247,7 +247,7 @@ class NavButton(QWidget):
                 self._icon_lbl.setText("")
                 self._has_pix = True
                 self._icon_lbl.setStyleSheet("background: transparent; border: none;")
-                self._icon_glow = apply_shadow_glow(self._icon_lbl, _ACCENT_HI)
+                self._icon_glow = apply_shadow_float(self._icon_lbl, _ACCENT_HI)
             else:
                 self._icon_lbl.setStyleSheet(
                     f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_15}px;"
@@ -432,8 +432,7 @@ class SidebarWidget(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         self.setStyleSheet("""
             QWidget {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {bg0}, stop:1 {bg1});
+                background: {bg0};
             }}
         """.format(bg0=_BG_SIDEBAR, bg1=_BG_SIDEBAR_ALT))
 
@@ -506,7 +505,7 @@ class SidebarWidget(QWidget):
         self._logo_lbl.setMaximumWidth(0)
         self._logo_lbl.setMinimumWidth(0)
         self._logo_lbl.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        apply_shadow_glow(self._logo_lbl, _ACCENT_HI)
+        apply_shadow_float(self._logo_lbl, _ACCENT_HI)
         lr.addWidget(self._logo_lbl)
 
         self._logo_lbl_anim = QPropertyAnimation(self._logo_lbl, b"maximumWidth", self)
@@ -594,7 +593,7 @@ class SidebarWidget(QWidget):
         self._avatar.setFixedSize(SIZE_ICON_LG, SIZE_ICON_LG)
         self._avatar.setScaledContents(True)
         self._avatar.setStyleSheet(
-            f"border-radius: {RADIUS_14}px; background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 {_ACCENT}, stop:1 {_ACCENT_HI});"
+            f"border-radius: {RADIUS_14}px; background: {_ACCENT_HI};"
             f"color: white; font-weight: {FONT_WEIGHT_HEAVY}; font-size: {FONT_SIZE_LABEL}px; "
             "qproperty-alignment: 'AlignCenter';"
         )
@@ -653,8 +652,7 @@ class SidebarWidget(QWidget):
         self.setStyleSheet(
             """
             QWidget {{
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {bg0}, stop:1 {bg1});
+                background: {bg0};
             }}
         """.format(bg0=_BG_SIDEBAR, bg1=_BG_SIDEBAR_ALT)
         )
@@ -766,7 +764,7 @@ class SidebarWidget(QWidget):
             initials = (email[:2] if email else "").upper()
             self._avatar.setText(initials)
             self._avatar.setStyleSheet(
-                f"border-radius: {RADIUS_14}px; background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 {_ACCENT}, stop:1 {_ACCENT_HI});"
+                f"border-radius: {RADIUS_14}px; background: {_ACCENT_HI};"
                 f"color: white; font-weight: {FONT_WEIGHT_HEAVY}; font-size: {FONT_SIZE_LABEL}px; "
                 "qproperty-alignment: 'AlignCenter';"
             )

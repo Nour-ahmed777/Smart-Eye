@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -15,7 +14,6 @@ from PySide6.QtWidgets import (
 )
 
 from backend.repository import db
-from frontend.icon_theme import themed_icon_pixmap
 from frontend.services.rules_service import RulesService
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.styles._colors import (
@@ -35,9 +33,7 @@ from frontend.ui_tokens import (
     SIZE_CONTROL_MD,
     SIZE_LABEL_MIN,
     SIZE_LABEL_W,
-    SIZE_ROW_48,
     SPACE_10,
-    SPACE_40,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
@@ -85,15 +81,6 @@ class RuleDetailPanel(QWidget):
         wl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         wl.setSpacing(SPACE_10)
         wl.setContentsMargins(SPACE_XXL, SPACE_XXL, SPACE_XXL, SPACE_XXL)
-
-        icon_lbl = QLabel()
-        icon_lbl.setFixedSize(SIZE_ROW_48, SIZE_ROW_48)
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet("background:transparent;border:none;")
-        pix = themed_icon_pixmap("frontend/assets/icons/rules.png", SPACE_40, SPACE_40)
-        if not pix.isNull():
-            icon_lbl.setPixmap(pix)
-        wl.addWidget(icon_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
 
         t = QLabel("No rule selected")
         t.setAlignment(Qt.AlignmentFlag.AlignCenter)

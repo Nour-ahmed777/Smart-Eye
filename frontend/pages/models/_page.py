@@ -391,6 +391,7 @@ class ModelsPage(QWidget):
         st_row.addWidget(self._fm_model_status, stretch=1)
         self._fm_gender_status = QLabel("Gender: unknown")
         self._fm_gender_status.setStyleSheet(_STATUS_DEFAULT_STYLE)
+        self._fm_gender_status.setVisible(False)
         st_row.addWidget(self._fm_gender_status)
         cl.addLayout(st_row)
 

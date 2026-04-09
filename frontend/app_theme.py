@@ -33,7 +33,7 @@ def page_base_styles(font_size: int = 13) -> str:
     return f"""
     QWidget {{
         color: {text_pri};
-        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        font-family: 'Segoe UI Variable', 'Segoe UI', 'Bahnschrift', 'Tahoma', sans-serif;
         font-size: {font_size}px;
         background-color: transparent;
     }}

@@ -33,6 +33,7 @@ from frontend.styles._colors import (
     _BG_OVERLAY,
     _BORDER,
     _BORDER_DIM,
+    _TEXT_PRI,
     _TEXT_SEC,
     _TEXT_MUTED,
     _ACCENT,
@@ -57,6 +58,7 @@ from frontend.ui_tokens import (
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_SEMIBOLD,
     RADIUS_LG,
+    RADIUS_MD,
     RADIUS_XL,
     SIZE_BTN_W_135,
     SIZE_CONTROL_18,
@@ -69,6 +71,7 @@ from frontend.ui_tokens import (
     SPACE_14,
     SPACE_20,
     SPACE_5,
+    SPACE_6,
     SPACE_LG,
     SPACE_MD,
     SPACE_SM,
@@ -173,9 +176,10 @@ class DashboardPage(QWidget):
         self._hud_frame = QFrame()
         self._hud_frame.setFixedHeight(SIZE_CONTROL_MD)
         self._hud_frame.setStyleSheet("QFrame { background: transparent; border: none; }")
+        self._hud_frame.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         hud_layout = QHBoxLayout(self._hud_frame)
         hud_layout.setContentsMargins(0, 0, 0, 0)
-        hud_layout.setSpacing(SPACE_14)
+        hud_layout.setSpacing(SPACE_SM)
 
         icon_path = Path(__file__).resolve().parents[2] / "assets" / "icons" / "cameras.png"
         self._hud_icon = QLabel()
@@ -188,21 +192,23 @@ class DashboardPage(QWidget):
         self._hud_icon.setStyleSheet("background: transparent;")
         hud_layout.addWidget(self._hud_icon)
 
-        self._hud_online = QLabel("ONLINE: 0")
+        self._hud_online = QLabel("Online 0")
         self._hud_online.setStyleSheet(
-            f"color: {_ACCENT_HI}; font-weight: {FONT_WEIGHT_BOLD}; font-size: {FONT_SIZE_LABEL}px;"
+            f"color: {_ACCENT_HI}; font-weight: {FONT_WEIGHT_BOLD}; font-size: {FONT_SIZE_CAPTION}px;"
             f" letter-spacing: 0.{SPACE_5}px; background: transparent;"
+            f" padding: 0 {SPACE_6}px;"
         )
         hud_layout.addWidget(self._hud_online)
 
-        sep = QLabel("-")
-        sep.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_XXL}px; background: transparent;")
+        sep = QLabel("|")
+        sep.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
         hud_layout.addWidget(sep)
 
-        self._hud_offline = QLabel("OFFLINE: 0")
+        self._hud_offline = QLabel("Offline 0")
         self._hud_offline.setStyleSheet(
-            f"color: {_DANGER}; font-weight: {FONT_WEIGHT_BOLD}; font-size: {FONT_SIZE_LABEL}px;"
+            f"color: {_DANGER}; font-weight: {FONT_WEIGHT_BOLD}; font-size: {FONT_SIZE_CAPTION}px;"
             f" letter-spacing: 0.{SPACE_5}px; background: transparent;"
+            f" padding: 0 {SPACE_6}px;"
         )
         hud_layout.addWidget(self._hud_offline)
 
@@ -222,20 +228,21 @@ class DashboardPage(QWidget):
         right_panel.setSpacing(SPACE_LG)
 
         alarms_header = QHBoxLayout()
+        alarms_header.setSpacing(SPACE_SM)
         alarms_title = QLabel("Active Alarms")
         alarms_font = QFont()
         safe_set_point_size(alarms_font, FONT_SIZE_BODY)
         alarms_font.setBold(True)
         alarms_title.setFont(alarms_font)
-        alarms_title.setStyleSheet("background: transparent;")
+        alarms_title.setStyleSheet(f"background: transparent; color: {_TEXT_PRI};")
         alarms_header.addWidget(alarms_title)
 
         self._alarm_count_badge = QLabel("0")
         self._alarm_count_badge.setFixedHeight(SIZE_CONTROL_XS)
         self._alarm_count_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._alarm_count_badge.setStyleSheet(f"""
-            background: {_BG_OVERLAY}; color: {_TEXT_MUTED};
-            border: {SPACE_XXXS}px solid {_BORDER_DIM}; border-radius: {RADIUS_LG}px;
+            background: {_BG_OVERLAY}; color: {_TEXT_SEC};
+            border: {SPACE_XXXS}px solid {_BORDER_DIM}; border-radius: {RADIUS_MD}px;
             font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD};
             padding: 0 {SPACE_SM}px; min-width: {SPACE_20}px;
         """)
@@ -249,7 +256,7 @@ class DashboardPage(QWidget):
             QFrame#AlarmsCard {{
                 background-color: {_BG_RAISED};
                 border: {SPACE_XXXS}px solid {_BORDER};
-                border-radius: {RADIUS_XL}px;
+                border-radius: {RADIUS_MD}px;
             }}
         """)
         alarms_vbox = QVBoxLayout(alarms_card)
@@ -268,10 +275,11 @@ class DashboardPage(QWidget):
 
         self._no_alarm_label = QLabel("No active alarms")
         self._no_alarm_label.setStyleSheet(
-            f"color: {_SUCCESS}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; "
+            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; "
             f"padding: {SPACE_XL}px {SPACE_LG}px; background: transparent;"
         )
         self._no_alarm_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._no_alarm_label.setText("No active alarms\nSystem is currently within configured rules")
         self._alarms_layout.addWidget(self._no_alarm_label)
         self._alarms_area.setWidget(self._alarms_container)
         alarms_vbox.addWidget(self._alarms_area)
@@ -411,8 +419,8 @@ class DashboardPage(QWidget):
         except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         offline = max(0, total - online)
-        self._hud_online.setText(f"ONLINE: {online}")
-        self._hud_offline.setText(f"OFFLINE: {offline}")
+        self._hud_online.setText(f"Online {online}")
+        self._hud_offline.setText(f"Offline {offline}")
         self._auto_set_grid(online)
 
     def _disconnect_all_camera_signals(self):
@@ -541,16 +549,16 @@ class DashboardPage(QWidget):
                 background: {_DANGER_BG_18};
                 color: {_DANGER};
                 border: {SPACE_XXXS}px solid {_DANGER_BORDER_40_ALT};
-                border-radius: {RADIUS_LG}px;
+                border-radius: {RADIUS_MD}px;
                 font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD};
                 padding: 0 {SPACE_SM}px; min-width: {SPACE_20}px;
             """)
         else:
             self._alarm_count_badge.setStyleSheet(f"""
                 background: {_BG_OVERLAY};
-                color: {_TEXT_MUTED};
+                color: {_TEXT_SEC};
                 border: {SPACE_XXXS}px solid {_BORDER_DIM};
-                border-radius: {RADIUS_LG}px;
+                border-radius: {RADIUS_MD}px;
                 font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD};
                 padding: 0 {SPACE_SM}px; min-width: {SPACE_20}px;
             """)

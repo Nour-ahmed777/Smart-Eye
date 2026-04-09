@@ -4,7 +4,6 @@ import contextlib
 import re
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -24,10 +23,8 @@ from frontend.ui_tokens import (
     FONT_WEIGHT_BOLD,
     FONT_WEIGHT_SEMIBOLD,
     SIZE_FIELD_W_SM,
-    SIZE_ICON_60,
     SIZE_LABEL_W_LG,
     SPACE_10,
-    SPACE_40,
     SPACE_SM,
     SPACE_XS,
     SPACE_XXL,
@@ -96,17 +93,6 @@ class DetailPanel(QWidget):
         el.setAlignment(Qt.AlignmentFlag.AlignCenter)
         el.setSpacing(SPACE_10)
         el.setContentsMargins(SPACE_XXL, SPACE_XXL, SPACE_XXL, SPACE_XXL)
-
-        icon_lbl = QLabel()
-        icon_lbl.setFixedSize(SIZE_ICON_60, SIZE_ICON_60)
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet("background: transparent; border: none;")
-        _icon_pix = QPixmap("frontend/assets/icons/person.png")
-        if not _icon_pix.isNull():
-            icon_lbl.setPixmap(
-                _icon_pix.scaled(SPACE_40, SPACE_40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
-        el.addWidget(icon_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
 
         title_lbl = QLabel("No person selected")
         title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
