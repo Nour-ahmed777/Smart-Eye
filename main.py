@@ -141,6 +141,13 @@ def main():
     app.setApplicationName("SmartEye")
     app.setOrganizationName("SmartEye")
 
+    try:
+        from frontend.widgets.combobox_popup import setup_combobox_popup_behavior
+
+        setup_combobox_popup_behavior(app)
+    except Exception:
+        pass
+
     font = QFont("Segoe UI", 10)
     app.setFont(font)
     from frontend.app_theme import get_theme

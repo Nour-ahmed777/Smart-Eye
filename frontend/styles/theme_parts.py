@@ -20,6 +20,7 @@ from frontend.styles._colors import (
     _ACCENT_HI_BG_28,
     _ACCENT_HI_BG_45,
     _ACCENT_SUB,
+    _BG_BASE,
     _BG_CHECK,
     _BG_DARKEST,
     _BG_OVERLAY,
@@ -227,20 +228,23 @@ QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
 }}
 
 QComboBox {{
-    background-color: transparent;
-    border: {SPACE_XXXS}px solid {_BORDER};
+    background-color: {_BG_BASE};
+    border: {SPACE_XXXS}px solid {_BORDER_DARK};
     border-radius: {RADIUS_MD}px;
     padding: {SPACE_6}px {SPACE_34}px {SPACE_6}px {SPACE_MD}px;
     color: {_TEXT_PRI};
     min-height: {SIZE_SECTION_H}px;
     combobox-popup: 0;
 }}
-QComboBox:hover {{ }}
-QComboBox:focus {{ }}
+QComboBox:hover {{ border-color: {_ACCENT_HI_BG_12}; }}
+QComboBox:focus {{ border-color: {_ACCENT_HI}; }}
 QComboBox::drop-down {{
     border: none;
+    border-left: {SPACE_XXXS}px solid {_BORDER_DARK};
     background: transparent;
     width: {SPACE_20}px;
+    border-top-right-radius: {RADIUS_MD}px;
+    border-bottom-right-radius: {RADIUS_MD}px;
 }}
 QComboBox::down-arrow {{
     image: url({arrow_down});
@@ -248,27 +252,34 @@ QComboBox::down-arrow {{
     height: {SIZE_ICON_12}px;
 }}
 QComboBox QAbstractItemView {{
-    background-color: {_BG_OVERLAY};
-    border: {SPACE_XXXS}px solid {_BORDER};
-    border-radius: {RADIUS_MD}px;
+    background-color: {_BG_SURFACE};
+    border: {SPACE_XXXS}px solid {_BORDER_DARK};
+    border-radius: {RADIUS_NONE}px;
     color: {_TEXT_PRI};
-    selection-background-color: {_ACCENT_BG_22};
+    selection-background-color: {_ACCENT_HI_BG_12};
     selection-color: {_TEXT_PRI};
-    padding: {SPACE_XS}px;
-    margin: {SPACE_XXXS}px;
+    padding: 0;
+    margin: 0;
     outline: none;
 }}
+QComboBox QListView {{
+    border-radius: {RADIUS_NONE}px;
+}}
 QComboBox QAbstractItemView::viewport {{
-    border-radius: {RADIUS_MD}px;
+    border-radius: {RADIUS_NONE}px;
 }}
 QComboBox QAbstractItemView::item {{
     padding: {SPACE_6}px {SPACE_MD}px;
-    border-radius: {RADIUS_5}px;
-    margin: 1px {SPACE_XXXS}px;
+    border-radius: {RADIUS_NONE}px;
     min-height: {SIZE_ITEM_SM}px;
 }}
+QComboBox QAbstractItemView::item:selected {{
+    background: {_ACCENT_HI_BG_12};
+    border-radius: {RADIUS_NONE}px;
+}}
 QComboBox QAbstractItemView::item:hover {{
-    background: {_ACCENT_HI_BG_10};
+    background: {_ACCENT_HI_BG_12};
+    border-radius: {RADIUS_NONE}px;
 }}
 """
 
