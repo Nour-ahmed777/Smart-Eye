@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json as _json
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QSize
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QBrush, QPixmap, QFontDatabase, QIcon
 from PySide6.QtWidgets import (
     QFrame,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from frontend.app_theme import safe_set_point_size
+from frontend.icon_theme import themed_existing_pixmap, themed_icon_pixmap
 from frontend.styles._colors import (
     _ACCENT,
     _ACCENT_HI,
@@ -97,6 +98,53 @@ def _read_app_info() -> dict:
 _APP_INFO = _read_app_info()
 
 
+def _reload_color_tokens() -> None:
+    global _ACCENT
+    global _ACCENT_HI
+    global _ACCENT_HI_BG_10
+    global _ACCENT_HI_BG_20
+    global _BG_BASE_92
+    global _BG_NAV_ALT
+    global _BG_NAV_DARK
+    global _BG_SIDEBAR_ALT
+    global _BG_SIDEBAR_START
+    global _MUTED_BORDER_60
+    global _TEXT_MUTED
+    global _TEXT_ON_ACCENT
+    global _TEXT_PRI
+    global _TEXT_SEC
+    global _WHITE_02
+    global _WHITE_03
+    global _WHITE_04
+    global _BG_SIDEBAR
+    global _BORDER_SIDE
+
+    try:
+        from frontend.styles import _colors as _c
+
+        _ACCENT = _c._ACCENT
+        _ACCENT_HI = _c._ACCENT_HI
+        _ACCENT_HI_BG_10 = _c._ACCENT_HI_BG_10
+        _ACCENT_HI_BG_20 = _c._ACCENT_HI_BG_20
+        _BG_BASE_92 = _c._BG_BASE_92
+        _BG_NAV_ALT = _c._BG_NAV_ALT
+        _BG_NAV_DARK = _c._BG_NAV_DARK
+        _BG_SIDEBAR_ALT = _c._BG_SIDEBAR_ALT
+        _BG_SIDEBAR_START = _c._BG_SIDEBAR_START
+        _MUTED_BORDER_60 = _c._MUTED_BORDER_60
+        _TEXT_MUTED = _c._TEXT_MUTED
+        _TEXT_ON_ACCENT = _c._TEXT_ON_ACCENT
+        _TEXT_PRI = _c._TEXT_PRI
+        _TEXT_SEC = _c._TEXT_SEC
+        _WHITE_02 = _c._WHITE_02
+        _WHITE_03 = _c._WHITE_03
+        _WHITE_04 = _c._WHITE_04
+        _BG_SIDEBAR = _BG_SIDEBAR_START
+        _BORDER_SIDE = _BG_NAV_DARK
+    except Exception:
+        pass
+
+
 class _LogoMonogram(QWidget):
     def __init__(self, size: int, parent=None):
         super().__init__(parent)
@@ -140,6 +188,7 @@ class _LogoMonogram(QWidget):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
+            scaled = themed_existing_pixmap(scaled)
             x = (self.width() - scaled.width()) // 2
             y = (self.height() - scaled.height()) // 2
             p.drawPixmap(x, y, scaled)
@@ -165,6 +214,7 @@ class NavButton(QWidget):
         self._locked = False
         self._has_pix = False
         self._focused = False
+        self._icon_path = str(icon or "")
         self.setFixedHeight(SIZE_CONTROL_MD)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setAttribute(Qt.WidgetAttribute.WA_Hover)
@@ -190,14 +240,10 @@ class NavButton(QWidget):
         self._icon_lbl.setFixedWidth(SIZE_ICON_XS)
         self._icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._icon_glow = None
-        if icon:
-            pix = QPixmap(icon)
+        if self._icon_path:
+            pix = themed_icon_pixmap(self._icon_path, FONT_SIZE_LARGE, FONT_SIZE_LARGE)
             if not pix.isNull():
-                self._icon_lbl.setPixmap(
-                    pix.scaled(
-                        FONT_SIZE_LARGE, FONT_SIZE_LARGE, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-                    )
-                )
+                self._icon_lbl.setPixmap(pix)
                 self._icon_lbl.setText("")
                 self._has_pix = True
                 self._icon_lbl.setStyleSheet("background: transparent; border: none;")
@@ -231,6 +277,23 @@ class NavButton(QWidget):
         layout.addLayout(inner)
         layout.addStretch(0)
         self._inner = inner
+        self._apply_style(False)
+
+    def refresh_icon_tint(self) -> None:
+        if not self._icon_path:
+            return
+        pix = themed_icon_pixmap(self._icon_path, FONT_SIZE_LARGE, FONT_SIZE_LARGE)
+        if pix.isNull():
+            self._has_pix = False
+            self._icon_lbl.setPixmap(QPixmap())
+            self._icon_lbl.setText("")
+            return
+        self._icon_lbl.setPixmap(pix)
+        self._icon_lbl.setText("")
+        self._has_pix = True
+        self._icon_lbl.setStyleSheet("background: transparent; border: none;")
+        if self._icon_glow is None:
+            self._icon_glow = apply_shadow_glow(self._icon_lbl, _ACCENT_HI)
         self._apply_style(False)
 
     def set_active(self, active: bool):
@@ -358,6 +421,12 @@ class SidebarWidget(QWidget):
         self._section_labels: list[QLabel] = []
         self._section_anims: list[QPropertyAnimation] = []
         self._section_btn_keys: list[list[str]] = []
+        self._account: dict | None = None
+        self._top_divider = None
+        self._bottom_divider = None
+        self._scroll = None
+        self._logout_icon_path = "frontend/assets/icons/logout.png"
+        self._logo_font_family = "ELECTRIC CITY"
 
         self.setFixedWidth(_SIDEBAR_COLLAPSED)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
@@ -420,6 +489,7 @@ class SidebarWidget(QWidget):
                     font_family = fams[0]
         except (OSError, RuntimeError):
             pass
+        self._logo_font_family = font_family
         logo_font = QFont()
         logo_font.setFamily(font_family)
         safe_set_point_size(logo_font, FONT_SIZE_19)
@@ -449,6 +519,7 @@ class SidebarWidget(QWidget):
         divider.setFrameShape(QFrame.Shape.HLine)
         divider.setFixedHeight(SPACE_XXXS)
         divider.setStyleSheet("background: {bg}; border: none;".format(bg=_BORDER_SIDE))
+        self._top_divider = divider
         root.addWidget(divider)
 
         scroll = QScrollArea(self)
@@ -462,6 +533,8 @@ class SidebarWidget(QWidget):
             f" border-radius: {RADIUS_XS}px; min-height: {SPACE_20}px; }}"
             " QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
         )
+
+        self._scroll = scroll
 
         nav_w = QWidget()
         nav_w.setStyleSheet("background: transparent;")
@@ -505,6 +578,7 @@ class SidebarWidget(QWidget):
         bot_divider.setFrameShape(QFrame.Shape.HLine)
         bot_divider.setFixedHeight(SPACE_XXXS)
         bot_divider.setStyleSheet("background: {bg}; border: none;".format(bg=_BORDER_SIDE))
+        self._bottom_divider = bot_divider
         root.addWidget(bot_divider)
 
         acc_w = QWidget()
@@ -531,13 +605,14 @@ class SidebarWidget(QWidget):
         acc_row.addWidget(self._acc_email, stretch=1)
 
         self._logout_btn = QToolButton()
-        self._logout_btn.setIcon(QIcon("frontend/assets/icons/logout.png"))
+        self._logout_btn.setIconSize(QSize(SIZE_ICON_XS, SIZE_ICON_XS))
         self._logout_btn.setStyleSheet(
             f"QToolButton {{ background: transparent; border: none; padding: {SPACE_XS}px; }}"
             f"QToolButton:hover {{ background: {_ACCENT_HI_BG_10}; border-radius: {RADIUS_6}px; }}"
             f"QToolButton:pressed {{ background: {_ACCENT_HI_BG_20}; border-radius: {RADIUS_6}px; }}"
             f"QToolButton:disabled {{ background: {_BG_BASE_92}; }}"
         )
+        self._refresh_logout_icon()
         self._logout_btn.clicked.connect(self._on_logout)
         acc_row.addWidget(self._logout_btn)
 
@@ -565,6 +640,63 @@ class SidebarWidget(QWidget):
         for k, btn in self._nav_btns.items():
             btn.set_active(k == key)
 
+    def _refresh_logout_icon(self) -> None:
+        pix = themed_icon_pixmap(self._logout_icon_path, SIZE_ICON_XS, SIZE_ICON_XS)
+        if pix.isNull():
+            self._logout_btn.setIcon(QIcon(self._logout_icon_path))
+            return
+        self._logout_btn.setIcon(QIcon(pix))
+
+    def refresh_theme(self) -> None:
+        _reload_color_tokens()
+
+        self.setStyleSheet(
+            """
+            QWidget {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 {bg0}, stop:1 {bg1});
+            }}
+        """.format(bg0=_BG_SIDEBAR, bg1=_BG_SIDEBAR_ALT)
+        )
+
+        if self._top_divider is not None:
+            self._top_divider.setStyleSheet("background: {bg}; border: none;".format(bg=_BORDER_SIDE))
+        if self._bottom_divider is not None:
+            self._bottom_divider.setStyleSheet("background: {bg}; border: none;".format(bg=_BORDER_SIDE))
+        if self._scroll is not None:
+            self._scroll.setStyleSheet(
+                "QScrollArea { border: none; background: transparent; }"
+                f" QScrollBar:vertical {{ background: transparent; width: {SPACE_XS}px; margin: {SPACE_XS}px 0; }}"
+                f" QScrollBar::handle:vertical {{ background: {_ACCENT_HI_BG_20};"
+                f" border-radius: {RADIUS_XS}px; min-height: {SPACE_20}px; }}"
+                " QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+            )
+
+        self._logo_lbl.setStyleSheet(
+            f"font-family: '{self._logo_font_family}', 'Bahnschrift SemiBold',"
+            f" 'Segoe UI Semibold', 'Segoe UI';"
+            f"font-size: {FONT_SIZE_19}px; font-weight: {FONT_WEIGHT_HEAVY}; color: {_TEXT_PRI};"
+            f"background: transparent; letter-spacing: 1.{RADIUS_NONE}px; padding: 0; margin-left: {RADIUS_NONE}px; margin-top: {RADIUS_NONE}px;"
+        )
+
+        self._acc_email.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_CAPTION, extra="background: transparent;"))
+        self._ver_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_9) + " background: transparent;")
+
+        for sec in self._section_labels:
+            sec.setStyleSheet(
+                f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_TINY}px; font-weight: {FONT_WEIGHT_HEAVY};"
+                f" letter-spacing: 1.{SPACE_XS}px; padding: {SPACE_10}px {SPACE_14}px {SPACE_3}px;"
+                f" background: transparent;"
+            )
+
+        for btn in self._nav_btns.values():
+            btn.refresh_icon_tint()
+            btn._apply_style(False)
+
+        self._refresh_logout_icon()
+        if self._account is not None:
+            self.set_account(self._account)
+
     def set_access(self, allowed_keys: set[str], is_admin: bool):
         for key, btn in self._nav_btns.items():
             locked = not is_admin and key not in allowed_keys
@@ -577,6 +709,7 @@ class SidebarWidget(QWidget):
             self._section_anims[idx].setTargetObject(sec_lbl)
 
     def set_account(self, account: dict | None):
+        self._account = account
         if not account or not account.get("email"):
             self._acc_email.setText("")
             self._avatar.setText("")
@@ -620,11 +753,10 @@ class SidebarWidget(QWidget):
         else:
             default_icon = Path("frontend/assets/icons/account.png")
             if default_icon.exists():
-                pm = QPixmap(str(default_icon))
+                pm = themed_icon_pixmap(str(default_icon), 24, 24)
                 if not pm.isNull():
-                    scaled = pm.scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     self._avatar.setText("")
-                    self._avatar.setPixmap(scaled)
+                    self._avatar.setPixmap(pm)
                     self._avatar.setStyleSheet(
                         f"border-radius: {RADIUS_14}px; background: {_BG_NAV_DARK}; "
                         f"border: {SPACE_XXXS}px solid {_BG_NAV_ALT}; padding: {SPACE_XXS}px;"

@@ -124,10 +124,7 @@ def _srow(
     )
     outer.addWidget(lb)
 
-    fr.setStyleSheet(
-        f"QFrame {{ background: transparent; border: none; border-bottom: {SPACE_XXXS}px solid {_BORDER_DIM}; }}"
-        f"QFrame QLineEdit, QFrame QComboBox, QFrame QSpinBox, QFrame QTextEdit {{ background: transparent; border: none; }}"
-    )
+    fr.setStyleSheet(f"QFrame {{ background: transparent; border: none; border-bottom: {SPACE_XXXS}px solid {_BORDER_DIM}; }}")
 
     if hint:
         from PySide6.QtWidgets import QVBoxLayout

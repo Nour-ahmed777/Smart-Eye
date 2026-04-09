@@ -4,7 +4,7 @@ import json
 import logging
 import os
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.app_theme import safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.styles.page_styles import divider_style
 from frontend.ui_tokens import (
     FONT_SIZE_LARGE,
@@ -68,10 +69,15 @@ _TABS: list[tuple[str, str]] = [
 
 def _load_icon(filename: str) -> QIcon:
     path = os.path.join(_ICON_DIR, filename)
-    return QIcon(path) if os.path.isfile(path) else QIcon()
+    if not os.path.isfile(path):
+        return QIcon()
+    pix = themed_icon_pixmap(path, _ICON_SIZE.width(), _ICON_SIZE.height())
+    return QIcon(pix) if not pix.isNull() else QIcon(path)
 
 
 class SettingsPage(QWidget):
+    theme_changed = Signal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setStyleSheet(_STYLESHEET)
@@ -98,11 +104,9 @@ class SettingsPage(QWidget):
 
         _icon_lbl = QLabel()
         _icon_lbl.setFixedSize(SIZE_ICON_LG, SIZE_ICON_LG)
-        _icon_pix = QPixmap("frontend/assets/icons/settings.png")
+        _icon_pix = themed_icon_pixmap("frontend/assets/icons/settings.png", SIZE_ICON_LG, SIZE_ICON_LG)
         if not _icon_pix.isNull():
-            _icon_lbl.setPixmap(
-                _icon_pix.scaled(SIZE_ICON_LG, SIZE_ICON_LG, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            _icon_lbl.setPixmap(_icon_pix)
         row.addWidget(_icon_lbl)
 
         title = QLabel("Settings")
@@ -195,6 +199,7 @@ class SettingsPage(QWidget):
 
         self._general_tab.debug_mode_changed.connect(self._set_debug_visible)
         self._general_tab.experimental_mode_changed.connect(self._set_experimental_visible)
+        self._general_tab.theme_changed.connect(self.theme_changed.emit)
 
         self._switch_to(0)
         return self._stack

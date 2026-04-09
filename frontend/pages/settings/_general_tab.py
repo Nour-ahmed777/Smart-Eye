@@ -1,11 +1,16 @@
 ﻿from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PySide6.QtCore import Signal, QPropertyAnimation
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
+    QComboBox,
+    QFileDialog,
     QLabel,
     QHBoxLayout,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -16,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from backend.repository import db
+from frontend.theme_runtime import install_theme_json, list_available_themes
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.styles._colors import _SUCCESS
 from frontend.ui_tokens import (
@@ -33,6 +39,7 @@ from ._constants import (
     _DANGER_BTN,
     _FIELD_H,
     _PRIMARY_BTN,
+    _combo_ss,
     _make_sdiv,
     _srow,
 )
@@ -44,9 +51,11 @@ class GeneralTab(QWidget):
     settings_saved = Signal()
     debug_mode_changed = Signal(bool)
     experimental_mode_changed = Signal(bool)
+    theme_changed = Signal(str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._pending_theme_import_path = ""
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -66,6 +75,36 @@ class GeneralTab(QWidget):
         root.addWidget(scroll, stretch=1)
 
         bl.addWidget(_make_sdiv("Startup"))
+
+        self._theme_path_edit = QLineEdit()
+        self._theme_path_edit.setReadOnly(True)
+        self._theme_path_edit.setPlaceholderText("Select a .json theme file")
+        self._theme_path_edit.setFixedHeight(_FIELD_H)
+        self._theme_path_edit.setStyleSheet(_combo_ss())
+        self._theme_path_action = self._theme_path_edit.addAction(
+            QIcon("frontend/assets/icons/folder.png"),
+            QLineEdit.ActionPosition.TrailingPosition,
+        )
+        self._theme_path_action.triggered.connect(self._browse_theme_json)
+        bl.addWidget(
+            _srow(
+                "Add new theme",
+                self._theme_path_edit,
+                hint="Choose a JSON file. It will be copied into data/themes when you click Save.",
+            )
+        )
+
+        self._theme_combo = QComboBox()
+        self._theme_combo.setStyleSheet(_combo_ss())
+        self._theme_combo.setFixedHeight(_FIELD_H)
+        self._populate_theme_combo()
+        bl.addWidget(
+            _srow(
+                "Theme",
+                self._theme_combo,
+                hint="Choose app theme. Save, then restart the app to apply theme changes everywhere.",
+            )
+        )
 
         self._autostart_toggle = ToggleSwitch()
         bl.addWidget(
@@ -155,14 +194,44 @@ class GeneralTab(QWidget):
         return bar
 
     def _save(self) -> None:
+        old_theme = str(db.get_setting("theme", "dark") or "dark").strip().lower()
+        old_theme_json = str(db.get_setting("theme_json_path", "") or "").strip()
+
+        pending_path = str(self._pending_theme_import_path or "").strip()
+        if pending_path:
+            try:
+                imported_name, imported_rel = install_theme_json(pending_path)
+                self._populate_theme_combo()
+                imported_idx = self._theme_combo.findData(imported_name)
+                if imported_idx >= 0:
+                    self._theme_combo.setCurrentIndex(imported_idx)
+                self._theme_path_edit.setText(imported_rel)
+                self._pending_theme_import_path = ""
+            except Exception as exc:
+                from PySide6.QtWidgets import QMessageBox
+
+                QMessageBox.critical(self, "Theme import failed", f"Could not import theme JSON:\n{exc}")
+                return
+
+        theme_value = str(self._theme_combo.currentData() or "dark")
         db.set_setting("log_retention_days", str(self._log_retention.value()))
         db.set_setting("auto_start_cameras", "1" if self._autostart_toggle.isChecked() else "0")
         db.set_setting("minimize_to_tray", "1" if self._minimize_tray_toggle.isChecked() else "0")
+        db.set_setting("theme", theme_value)
+        if theme_value == "dark":
+            db.set_setting("theme_json_path", "")
+            self._theme_path_edit.setText("")
+        else:
+            db.set_setting("theme_json_path", f"data/themes/{theme_value}.json")
+            if not self._theme_path_edit.text().strip():
+                self._theme_path_edit.setText(f"data/themes/{theme_value}.json")
         debug_on = self._debug_toggle.isChecked()
         db.set_setting("debug_mode_enabled", "1" if debug_on else "0")
         exp_on = self._experimental_toggle.isChecked()
         db.set_setting("experimental_mode_enabled", "1" if exp_on else "0")
         self.settings_saved.emit()
+        new_theme_json = "" if theme_value == "dark" else f"data/themes/{theme_value}.json"
+        # Runtime theme switching is disabled for stability; apply after app restart.
         self.debug_mode_changed.emit(debug_on)
         self.experimental_mode_changed.emit(exp_on)
         if db.get_bool("ui_show_save_popups", False):
@@ -170,7 +239,10 @@ class GeneralTab(QWidget):
 
             QMessageBox.information(self, "Saved", "General settings saved.")
         else:
-            self._flash_status("Saved")
+            if theme_value != old_theme or new_theme_json != old_theme_json:
+                self._flash_status("Saved. Restart required for theme changes")
+            else:
+                self._flash_status("Saved")
             logger.info("General settings saved.")
 
     def _flash_status(self, text: str) -> None:
@@ -204,6 +276,7 @@ class GeneralTab(QWidget):
             return
         defaults = {
             "theme": {"value": "dark", "type": "string"},
+            "theme_json_path": {"value": "", "type": "string"},
             "gpu_enabled": {"value": "1", "type": "bool"},
             "max_cameras": {"value": "4", "type": "int"},
             "snapshot_on_alarm": {"value": "1", "type": "bool"},
@@ -226,6 +299,31 @@ class GeneralTab(QWidget):
         self._log_retention.setValue(int(db.get_setting("log_retention_days", "30")))
         self._autostart_toggle.setChecked(db.get_bool("auto_start_cameras", False))
         self._minimize_tray_toggle.setChecked(db.get_bool("minimize_to_tray", False))
+        self._populate_theme_combo()
+        theme_val = str(db.get_setting("theme", "dark") or "dark").strip().lower()
+        idx = self._theme_combo.findData(theme_val)
+        self._theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        # This field is only for importing new themes, not showing active theme path.
+        self._pending_theme_import_path = ""
+        self._theme_path_edit.setText("")
         self._debug_toggle.setChecked(db.get_bool("debug_mode_enabled", False))
         self._experimental_toggle.setChecked(db.get_bool("experimental_mode_enabled", False))
+
+    def _populate_theme_combo(self) -> None:
+        current = str(self._theme_combo.currentData() or "dark").strip().lower() if hasattr(self, "_theme_combo") else "dark"
+        self._theme_combo.blockSignals(True)
+        self._theme_combo.clear()
+        self._theme_combo.addItem("Dark", "dark")
+        for name in list_available_themes():
+            self._theme_combo.addItem(name.replace("_", " ").title(), name)
+        idx = self._theme_combo.findData(current)
+        self._theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._theme_combo.blockSignals(False)
+
+    def _browse_theme_json(self) -> None:
+        chosen, _ = QFileDialog.getOpenFileName(self, "Select Theme JSON", "", "JSON Files (*.json)")
+        if not chosen:
+            return
+        self._pending_theme_import_path = str(chosen)
+        self._theme_path_edit.setText(Path(chosen).name)
 

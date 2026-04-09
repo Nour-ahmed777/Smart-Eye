@@ -1,4 +1,5 @@
 import logging
+from collections import deque
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPaintEvent
@@ -206,6 +207,8 @@ class PerformanceWidget(QFrame):
         root.addSpacing(SPACE_SM)
 
         self._ram_total = self._get_ram_total()
+        self._face_ms_samples = deque(maxlen=24)
+        self._obj_ms_samples = deque(maxlen=24)
         self._providers = QLabel("Face recognition: --\nObject detection: --\nRAM: --")
         self._providers.setWordWrap(True)
         self._providers.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION))
@@ -233,11 +236,25 @@ class PerformanceWidget(QFrame):
             logger.debug("Failed to refresh performance metrics", exc_info=True)
 
     def update_inference(self, face_ms: float, obj_ms: float):
+        try:
+            face_val = max(0.0, float(face_ms or 0.0))
+        except Exception:
+            face_val = 0.0
+        try:
+            obj_val = max(0.0, float(obj_ms or 0.0))
+        except Exception:
+            obj_val = 0.0
+
+        self._face_ms_samples.append(face_val)
+        self._obj_ms_samples.append(obj_val)
+        face_avg = (sum(self._face_ms_samples) / len(self._face_ms_samples)) if self._face_ms_samples else face_val
+        obj_avg = (sum(self._obj_ms_samples) / len(self._obj_ms_samples)) if self._obj_ms_samples else obj_val
+
         self._inference_label.setText(
             f"<span style='color:{_TEXT_MUTED}'>Face</span> "
-            f"<span style='color:{_TEXT_SEC}; font-weight:{FONT_WEIGHT_SEMIBOLD}'>{face_ms:.0f}ms</span>"
+            f"<span style='color:{_TEXT_SEC}; font-weight:{FONT_WEIGHT_SEMIBOLD}'>{face_avg:.1f}ms</span>"
             f"<span style='color:{_TEXT_MUTED}'>&nbsp;·&nbsp;Obj</span> "
-            f"<span style='color:{_TEXT_SEC}; font-weight:{FONT_WEIGHT_SEMIBOLD}'>{obj_ms:.0f}ms</span>"
+            f"<span style='color:{_TEXT_SEC}; font-weight:{FONT_WEIGHT_SEMIBOLD}'>{obj_avg:.1f}ms</span>"
         )
 
     def update_providers(self, items, gpu_name: str = "", cpu_name: str = "", cpu_name_long: str = ""):
@@ -249,9 +266,15 @@ class PerformanceWidget(QFrame):
         gpu_label = gpu_name or "GPU"
 
         for ent in items:
-            prov = (ent.get("provider") or "").lower()
-            target = f"{'GPU' if 'dml' in prov or 'cuda' in prov or 'gpu' in prov else 'CPU'}"
-            if "gpu" in target.lower():
+            prov_raw = str(ent.get("provider") or "")
+            prov_items = [p.strip().lower() for p in prov_raw.split(",") if p.strip()]
+            primary = prov_items[0] if prov_items else prov_raw.lower()
+            has_gpu = any(any(k in tok for k in ("dml", "cuda", "rocm", "openvino", "coreml", "gpu")) for tok in prov_items)
+            has_cpu = any("cpu" in tok for tok in prov_items)
+
+            if has_gpu and has_cpu:
+                branded = "Hybrid (DML preferred, CPU fallback)"
+            elif has_gpu:
                 branded = f"GPU ({gpu_label})"
             else:
                 branded = f"CPU ({cpu_long})"

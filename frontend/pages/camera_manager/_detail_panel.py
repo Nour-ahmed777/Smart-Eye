@@ -27,6 +27,7 @@ from backend.camera.camera_manager import get_camera_manager
 from backend.repository import db
 from backend.pipeline.detector_manager import notify_plugins_changed
 from frontend.app_theme import safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.dialogs import apply_popup_theme
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
@@ -754,21 +755,14 @@ class CameraDetailPanel(QWidget):
             all_plugins = []
             assigned_ids = set()
 
-        _down_pix = QPixmap("frontend/assets/icons/arrow_down.png")
-        _up_pix = QPixmap("frontend/assets/icons/arrow_up.png")
+        _down_pix = themed_icon_pixmap("frontend/assets/icons/arrow_down.png", 12, 12)
+        _up_pix = themed_icon_pixmap("frontend/assets/icons/arrow_up.png", 12, 12)
 
         def _expand_icon(is_up: bool) -> QIcon:
             pix = _up_pix if is_up else _down_pix
             if pix.isNull():
                 return QIcon()
-            return QIcon(
-                pix.scaled(
-                    12,
-                    12,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
-                )
-            )
+            return QIcon(pix)
 
         def _build_classes_panel(plugin_id: int) -> tuple:
             wrap = QWidget()

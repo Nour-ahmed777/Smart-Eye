@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 from backend.repository import db
 from frontend.services.rules_service import RulesService
 from frontend.app_theme import safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.dialogs import apply_popup_theme
 
 from frontend.styles._colors import _ACCENT_BG_22, _MUTED_BG_25
@@ -134,11 +135,9 @@ class RulesManagerPage(QWidget):
 
         _icon_lbl = QLabel()
         _icon_lbl.setFixedSize(SIZE_ICON_LG, SIZE_ICON_LG)
-        _icon_pix = QPixmap("frontend/assets/icons/rules.png")
+        _icon_pix = themed_icon_pixmap("frontend/assets/icons/rules.png", SIZE_ICON_LG, SIZE_ICON_LG)
         if not _icon_pix.isNull():
-            _icon_lbl.setPixmap(
-                _icon_pix.scaled(SIZE_ICON_LG, SIZE_ICON_LG, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            _icon_lbl.setPixmap(_icon_pix)
         hl.addWidget(_icon_lbl)
 
         title = QLabel("Rules Manager")
@@ -343,9 +342,9 @@ class RulesManagerPage(QWidget):
             icon.setFixedSize(SIZE_ROW_MD, SIZE_ROW_MD)
             icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
             icon.setStyleSheet("background: transparent; border: none;")
-            _rpix = QPixmap("frontend/assets/icons/rules.png")
+            _rpix = themed_icon_pixmap("frontend/assets/icons/rules.png", 34, 34)
             if not _rpix.isNull():
-                icon.setPixmap(_rpix.scaled(34, 34, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                icon.setPixmap(_rpix)
             el.addWidget(icon, alignment=Qt.AlignmentFlag.AlignCenter)
             has_filter = self._active_filter != "all"
             has_search = bool(self._search_edit.text().strip())

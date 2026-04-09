@@ -22,6 +22,7 @@ from backend.analytics import report_generator, stats_engine
 from backend.analytics.heatmap_generator import get_generator
 from backend.repository import db
 from frontend.app_theme import page_base_styles, safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.widgets.chart_widget import ChartWidget
 from frontend.widgets.heatmap_widget import HeatmapWidget
 from frontend.widgets.stat_card_widget import StatCardWidget
@@ -129,11 +130,9 @@ class AnalyticsPage(QWidget):
 
         icon_lbl = QLabel()
         icon_lbl.setFixedSize(SIZE_ICON_LG, SIZE_ICON_LG)
-        _pix = QPixmap("frontend/assets/icons/analytics.png")
+        _pix = themed_icon_pixmap("frontend/assets/icons/analytics.png", SIZE_ICON_LG, SIZE_ICON_LG)
         if not _pix.isNull():
-            icon_lbl.setPixmap(
-                _pix.scaled(SIZE_ICON_LG, SIZE_ICON_LG, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            icon_lbl.setPixmap(_pix)
         hl.addWidget(icon_lbl)
 
         title = QLabel("Analytics")

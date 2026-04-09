@@ -159,3 +159,31 @@ SIZE_IMAGE_240 = 240
 SIZE_TABLE_COL_SM = 68
 SIZE_OFFSET_LG = 220
 SIZE_MIN_W_SM = 100
+
+
+def _apply_theme_token_overrides() -> None:
+	try:
+		from frontend.theme_runtime import get_active_theme_payload
+
+		payload = get_active_theme_payload() or {}
+	except Exception:
+		return
+
+	overrides = payload.get("tokens", {})
+	if not isinstance(overrides, dict):
+		return
+
+	g = globals()
+	for key, value in overrides.items():
+		if not isinstance(key, str):
+			continue
+		if key not in g:
+			continue
+		if not key.isupper():
+			continue
+		current = g.get(key)
+		if isinstance(current, (int, float)) and isinstance(value, (int, float)):
+			g[key] = type(current)(value)
+
+
+_apply_theme_token_overrides()

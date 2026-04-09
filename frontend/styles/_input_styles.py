@@ -11,6 +11,7 @@ from frontend.styles._colors import (
     _TEXT_MUTED,
     _TEXT_PRI,
 )
+from frontend.icon_theme import themed_icon_path
 from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_BODY,
@@ -89,10 +90,10 @@ _FORM_INPUTS = (
     "QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {"
     f"    background: {_ACCENT_HI_BG_12};"
     "}"
-    f"QSpinBox::up-arrow {{ image: url(frontend/assets/icons/arrow_up.png); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
-    f"QSpinBox::down-arrow {{ image: url(frontend/assets/icons/arrow_down.png); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
-    f"QDoubleSpinBox::up-arrow {{ image: url(frontend/assets/icons/arrow_up.png); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
-    f"QDoubleSpinBox::down-arrow {{ image: url(frontend/assets/icons/arrow_down.png); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
+    f"QSpinBox::up-arrow {{ image: url({themed_icon_path('frontend/assets/icons/arrow_up.png')}); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
+    f"QSpinBox::down-arrow {{ image: url({themed_icon_path('frontend/assets/icons/arrow_down.png')}); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
+    f"QDoubleSpinBox::up-arrow {{ image: url({themed_icon_path('frontend/assets/icons/arrow_up.png')}); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
+    f"QDoubleSpinBox::down-arrow {{ image: url({themed_icon_path('frontend/assets/icons/arrow_down.png')}); width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px; }}"
 )
 
 _FORM_COMBO = (
@@ -103,6 +104,7 @@ _FORM_COMBO = (
     f"    padding: 0 {SPACE_10}px;"
     f"    color: {_TEXT_PRI};"
     f"    min-height: {SIZE_CONTROL_22}px;"
+    "    combobox-popup: 0;"
     "}"
     "QComboBox:hover {"
     f"    border-color: {_ACCENT_HI_BG_22};"
@@ -114,20 +116,30 @@ _FORM_COMBO = (
     "QComboBox:disabled {"
     f"    color: {_TEXT_MUTED};"
     "}"
-    f"QComboBox::drop-down {{ border: none; width: {SIZE_CONTROL_XS}px; background: transparent; }}"
-    f"QComboBox::down-arrow {{ image: url(frontend/assets/icons/arrow_down.png); width: {SIZE_ICON_12}px; height: {SIZE_ICON_12}px; }}"
+    f"QComboBox::drop-down {{ border: none; width: {SIZE_CONTROL_XS}px; background: transparent;"
+    f" border-top-right-radius: {RADIUS_MD}px; border-bottom-right-radius: {RADIUS_MD}px; margin-right: {SPACE_XXXS}px; }}"
+    f"QComboBox::down-arrow {{ image: url({themed_icon_path('frontend/assets/icons/arrow_down.png')}); width: {SIZE_ICON_12}px; height: {SIZE_ICON_12}px; }}"
     "QComboBox QAbstractItemView {"
     f"    background-color: {_BG_OVERLAY};"
     f"    border: {SPACE_XXXS}px solid {_BORDER};"
+    f"    border-radius: {RADIUS_MD}px;"
     f"    selection-background-color: {_ACCENT_BG_22};"
     f"    selection-color: {_TEXT_PRI};"
     "    outline: none;"
     f"    color: {_TEXT_PRI};"
     f"    padding: {SPACE_XS}px;"
+    f"    margin: {SPACE_XXXS}px;"
+    "}"
+    "QComboBox QAbstractItemView::viewport {"
+    f"    border-radius: {RADIUS_MD}px;"
+    "}"
+    "QComboBox QListView {"
+    f"    border-radius: {RADIUS_MD}px;"
     "}"
     "QComboBox QAbstractItemView::item {"
     f"    padding: {SPACE_6}px {SPACE_10}px;"
     f"    border-radius: {RADIUS_SM}px;"
+    f"    margin: 1px {SPACE_XXXS}px;"
     f"    min-height: {SIZE_ITEM_SM}px;"
     "}"
     "QComboBox QAbstractItemView::item:hover {"

@@ -7,6 +7,8 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
     QFrame,
     QGraphicsBlurEffect,
     QHBoxLayout,
@@ -27,6 +29,7 @@ from frontend.widgets.alert_popup import show_alert
 from frontend.navigation import nav_label_map
 from frontend.widgets.auth_overlay import AuthOverlay
 from frontend.widgets.sidebar import SidebarWidget, LOGO_ICON_PATH
+from frontend.theme_runtime import invalidate_theme_cache
 from frontend.state.session import build_trusted_user, compute_access, pick_initial_tab
 from utils import config
 
@@ -73,6 +76,7 @@ class MainWindow(QMainWindow):
         side_border = QFrame(self)
         side_border.setFixedWidth(SPACE_XXXS)
         side_border.setStyleSheet(f"background: {_BG_NAV_DARK}; border: none;")
+        self._side_border = side_border
         main_layout.addWidget(side_border)
 
         main_layout.addWidget(self._stack, stretch=1)
@@ -84,10 +88,11 @@ class MainWindow(QMainWindow):
                 return False
         self._page_specs = get_page_specs(self._rules_service)
         self._pages = build_pages(_preload, self._rules_service)
+        self._theme_dirty_pages: set[str] = set()
         self._page_last_active: dict[str, float] = {}
         self._current_key: str | None = None
-        if self._pages.get("settings") and hasattr(self._pages["settings"], "bind_bootstrap_cleared"):
-            self._pages["settings"].bind_bootstrap_cleared(self._on_bootstrap_cleared)
+        if self._pages.get("settings"):
+            self._bind_settings_page(self._pages["settings"])
 
         for page in self._pages.values():
             if page is not None:
@@ -149,6 +154,8 @@ class MainWindow(QMainWindow):
                     return
                 self._pages[key] = page
                 self._stack.addWidget(page)
+                if key == "settings":
+                    self._bind_settings_page(page)
             except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
                 import traceback
 
@@ -182,6 +189,96 @@ class MainWindow(QMainWindow):
         if prev_key and prev_key != key:
             self._maybe_unload_on_leave(prev_key)
         self._log_page_state(f"navigated:{key}")
+
+    def _on_theme_changed(self, theme_name: str) -> None:
+        try:
+            from frontend.styles import _colors as _c
+
+            self._current_theme = str(theme_name or "dark")
+            invalidate_theme_cache()
+            with contextlib.suppress(Exception):
+                config.invalidate_cache()
+            loaded_keys = [k for k, v in self._pages.items() if v is not None]
+            self.setStyleSheet(get_theme(self._current_theme))
+            if hasattr(self, "_side_border") and self._side_border is not None:
+                self._side_border.setStyleSheet(f"background: {_c._BG_NAV_DARK}; border: none;")
+            if hasattr(self, "_sidebar") and hasattr(self._sidebar, "refresh_theme"):
+                self._sidebar.refresh_theme()
+            self._theme_dirty_pages = set(loaded_keys)
+
+            # Avoid re-entrant page destruction while Settings save is still active.
+            current_key = self._current_key or "dashboard"
+            if current_key == "settings":
+                QTimer.singleShot(120, lambda ck=current_key: self._recreate_current_after_theme(ck))
+            elif current_key:
+                QTimer.singleShot(0, lambda ck=current_key: self._recreate_current_after_theme(ck))
+
+            # Re-polish existing widget tree so the refreshed app stylesheet takes effect immediately.
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+            self._refresh_top_level_widgets()
+        except Exception:
+            logger.exception("Failed to apply theme at runtime")
+
+    def _bind_settings_page(self, page) -> None:
+        if page is None:
+            return
+        if hasattr(page, "bind_bootstrap_cleared"):
+            page.bind_bootstrap_cleared(self._on_bootstrap_cleared)
+        if hasattr(page, "theme_changed"):
+            with contextlib.suppress(Exception):
+                page.theme_changed.disconnect(self._on_theme_changed)
+
+    def _recreate_current_after_theme(self, expected_key: str) -> None:
+        if self._current_key != expected_key:
+            return
+        if expected_key in self._theme_dirty_pages:
+            self._recreate_page(expected_key)
+            self._theme_dirty_pages.discard(expected_key)
+
+    def _refresh_top_level_widgets(self) -> None:
+        with contextlib.suppress(Exception):
+            from frontend.dialogs import apply_popup_theme
+
+            for w in QApplication.topLevelWidgets():
+                with contextlib.suppress(Exception):
+                    if isinstance(w, QDialog):
+                        apply_popup_theme(w, w.styleSheet())
+                    w.style().unpolish(w)
+                    w.style().polish(w)
+                    w.update()
+
+    def _recreate_page(self, key: str) -> None:
+        old = self._pages.get(key)
+        was_current = self._current_key == key
+        if old is not None:
+            with contextlib.suppress(Exception):
+                self._stack.removeWidget(old)
+            with contextlib.suppress(Exception):
+                old.deleteLater()
+            self._pages[key] = None
+
+        page = create_page(key, self._rules_service)
+        if page is None:
+            return
+        self._pages[key] = page
+        self._stack.addWidget(page)
+        if key == "settings":
+            self._bind_settings_page(page)
+
+        if was_current:
+            self._stack.setCurrentWidget(page)
+            self._sidebar.set_active(key)
+            with contextlib.suppress(Exception):
+                if hasattr(page, "on_activated"):
+                    page.on_activated()
+
+        with contextlib.suppress(Exception):
+            self._sidebar.set_access(self._allowed_tabs, self._is_admin)
+        with contextlib.suppress(Exception):
+            if self._session_user:
+                self._sidebar.set_account(self._session_user)
 
     def _mark_active(self, key: str) -> None:
         import time

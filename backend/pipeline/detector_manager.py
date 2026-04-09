@@ -584,6 +584,12 @@ class DetectorManager:
             if f.get("identity"):
                 continue
 
+            try:
+                if f.get("confidence") is None:
+                    f["confidence"] = float(f.get("det_score", 0.0) or 0.0)
+            except Exception:
+                f["confidence"] = 0.0
+
             best, best_iou, best_rel, best_score = None, 0.0, 999.0, -1e9
             for ent in existing_face_trackers:
                 eb = ent.get("bbox")
@@ -597,6 +603,14 @@ class DetectorManager:
             if best and best.get("identity") and (best_iou >= 0.28 or best_rel <= 1.10):
                 f["identity"] = best.get("identity")
                 f["confidence"] = best.get("confidence")
+                try:
+                    # Keep confidence responsive between identify refreshes in live inference.
+                    det_conf = float(f.get("det_score", 0.0) or 0.0)
+                    if det_conf > 0.0:
+                        prev_conf = float(f.get("confidence", 0.0) or 0.0)
+                        f["confidence"] = max(0.0, min(1.0, (prev_conf * 0.65) + (det_conf * 0.35)))
+                except Exception:
+                    pass
                 curr_embedding = f.get("embedding")
                 if curr_embedding is None:
                     curr_embedding = best.get("embedding")

@@ -365,10 +365,16 @@ def _migrate_v20(conn):
         ("ui_unload_on_leave", "bool", "Unload heavy tabs on leave", "performance"),
         ("ui_unload_idle_min", "int", "Unload idle tabs after (min)", "performance"),
         ("auto_pause_live_when_idle", "bool", "Auto-stop live cameras when idle", "performance"),
+        ("theme_json_path", "string", "Theme JSON Path", "general"),
     ]
     for key, vtype, label, section in settings:
         conn.execute(
             "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
             (vtype, label, section, key),
         )
+        if key == "theme_json_path":
+            conn.execute(
+                "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+                ("theme_json_path", "", "string", "Theme JSON Path", "general"),
+            )
     conn.commit()

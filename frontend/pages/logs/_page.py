@@ -31,6 +31,7 @@ from backend.repository import db
 from frontend.dialogs import apply_popup_theme
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.app_theme import page_base_styles, safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.widgets.toggle_switch import ToggleSwitch
 
 from frontend.styles._colors import (
@@ -173,11 +174,9 @@ class LogsViewerPage(QWidget):
         hl.setSpacing(SPACE_10)
         icon_lbl = QLabel()
         icon_lbl.setFixedSize(SIZE_ICON_LG, SIZE_ICON_LG)
-        _pix = QPixmap("frontend/assets/icons/logs.png")
+        _pix = themed_icon_pixmap("frontend/assets/icons/logs.png", SIZE_ICON_LG, SIZE_ICON_LG)
         if not _pix.isNull():
-            icon_lbl.setPixmap(
-                _pix.scaled(SIZE_ICON_LG, SIZE_ICON_LG, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            icon_lbl.setPixmap(_pix)
         hl.addWidget(icon_lbl)
         title = QLabel("Detection Logs")
         title_font = QFont()

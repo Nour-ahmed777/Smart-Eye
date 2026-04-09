@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from backend.repository import db
 from frontend.app_theme import safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.styles._btn_styles import _SEGMENT_TAB_BAR, _SEGMENT_TAB_BTN
 from frontend.styles._input_styles import _SEARCH_INPUT
 from frontend.styles._colors import _ACCENT_BG_22, _MUTED_BG_25
@@ -118,13 +119,9 @@ class CameraManagerPage(QWidget):
 
         _icon_lbl = QLabel()
         _icon_lbl.setFixedSize(SIZE_CONTROL_SM, SIZE_CONTROL_SM)
-        _icon_pix = QPixmap("frontend/assets/icons/cameras.png")
+        _icon_pix = themed_icon_pixmap("frontend/assets/icons/cameras.png", SIZE_CONTROL_SM, SIZE_CONTROL_SM)
         if not _icon_pix.isNull():
-            _icon_lbl.setPixmap(
-                _icon_pix.scaled(
-                    SIZE_CONTROL_SM, SIZE_CONTROL_SM, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-                )
-            )
+            _icon_lbl.setPixmap(_icon_pix)
         hl.addWidget(_icon_lbl)
 
         title = QLabel("Camera Manager")

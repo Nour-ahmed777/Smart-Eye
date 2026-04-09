@@ -195,3 +195,33 @@ _HEAT_RED = "#f85149"
 _BG_HEATMAP = "#14181e"
 _BG_HEATMAP_90 = "rgba(20,24,30,0.9)"
 _TOGGLE_CIRCLE = "#f0f6fc"
+
+
+def _apply_theme_color_overrides() -> None:
+	try:
+		from frontend.theme_runtime import get_active_theme_payload
+
+		payload = get_active_theme_payload() or {}
+	except Exception:
+		return
+
+	overrides = payload.get("colors", payload)
+	if not isinstance(overrides, dict):
+		return
+
+	g = globals()
+	for key, value in overrides.items():
+		if not isinstance(key, str):
+			continue
+		if key not in g:
+			continue
+		if not key.startswith("_"):
+			continue
+		if not isinstance(g.get(key), str):
+			continue
+		if not isinstance(value, str):
+			continue
+		g[key] = value
+
+
+_apply_theme_color_overrides()

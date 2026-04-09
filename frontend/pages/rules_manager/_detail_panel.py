@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from backend.repository import db
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.services.rules_service import RulesService
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.styles._colors import (
@@ -89,11 +90,9 @@ class RuleDetailPanel(QWidget):
         icon_lbl.setFixedSize(SIZE_ROW_48, SIZE_ROW_48)
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         icon_lbl.setStyleSheet("background:transparent;border:none;")
-        pix = QPixmap("frontend/assets/icons/rules.png")
+        pix = themed_icon_pixmap("frontend/assets/icons/rules.png", SPACE_40, SPACE_40)
         if not pix.isNull():
-            icon_lbl.setPixmap(
-                pix.scaled(SPACE_40, SPACE_40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            icon_lbl.setPixmap(pix)
         wl.addWidget(icon_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
 
         t = QLabel("No rule selected")

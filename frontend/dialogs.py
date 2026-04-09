@@ -47,18 +47,64 @@ from frontend.ui_tokens import (
 _ICON_PATH = "frontend/assets/icons/icon.ico"
 
 
+def _theme_color(name: str, fallback: str) -> str:
+    try:
+        from frontend.styles import _colors as _c
+
+        return str(getattr(_c, name, fallback))
+    except Exception:
+        return fallback
+
+
+def _button_styles() -> tuple[str, str, str]:
+    try:
+        from frontend.styles import _btn_styles as _b
+
+        return str(_b._PRIMARY_BTN), str(_b._SECONDARY_BTN), str(_b._DANGER_BTN)
+    except Exception:
+        return _PRIMARY_BTN, _SECONDARY_BTN, _DANGER_BTN
+
+
 def _window_icon() -> QIcon:
     icon = QIcon(_ICON_PATH)
     return icon
 
 
 def popup_surface_qss() -> str:
+    bg2 = _theme_color("_DB_BG_GRAD_2", _DB_BG_GRAD_2)
+    bg3 = _theme_color("_DB_BG_GRAD_3", _DB_BG_GRAD_3)
+    bg_base = _theme_color("_BG_BASE", "#141a22")
+    border_dark = _theme_color("_BORDER_DARK", "#2a3240")
+    text_pri = _theme_color("_TEXT_PRI", _TEXT_PRI)
+    text_muted = _theme_color("_TEXT_MUTED", _TEXT_MUTED)
+    accent = _theme_color("_ACCENT", "#2f81f7")
+    overlay = _theme_color("_BG_OVERLAY", "#1b2230")
     return f"""
         QDialog {{
-            background-color: {_DB_BG_GRAD_2};
-            border: {SPACE_XXXS}px solid {_DB_BG_GRAD_3};
+            background-color: {bg2};
+            border: {SPACE_XXXS}px solid {bg3};
             border-radius: {RADIUS_LG}px;
         }}
+        QDialog QLabel {{ color: {text_pri}; background: transparent; }}
+        QDialog QLineEdit, QDialog QTextEdit, QDialog QPlainTextEdit,
+        QDialog QComboBox, QDialog QSpinBox, QDialog QDoubleSpinBox {{
+            background-color: {bg_base};
+            border: {SPACE_XXXS}px solid {border_dark};
+            border-radius: {RADIUS_LG}px;
+            color: {text_pri};
+        }}
+        QDialog QLineEdit:focus, QDialog QTextEdit:focus, QDialog QPlainTextEdit:focus,
+        QDialog QComboBox:focus, QDialog QSpinBox:focus, QDialog QDoubleSpinBox:focus {{
+            border-color: {accent};
+        }}
+        QDialog QComboBox QAbstractItemView {{
+            background: {overlay};
+            color: {text_pri};
+            border: {SPACE_XXXS}px solid {border_dark};
+            border-radius: {RADIUS_LG}px;
+            selection-background-color: {accent};
+        }}
+        QDialog QAbstractButton:disabled {{ color: {text_muted}; }}
     """
 
 
@@ -89,11 +135,15 @@ def _build_dialog(title: str, text: str, icon: QMessageBox.Icon, buttons: list[t
     dlg.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.Dialog | Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint)
     dlg.setWindowModality(Qt.ApplicationModal)
     dlg.setWindowTitle(title)
+    pri = _theme_color("_TEXT_PRI", _TEXT_PRI)
+    sec = _theme_color("_TEXT_SEC", _TEXT_SEC)
+    primary_btn, secondary_btn, danger_btn = _button_styles()
+
     apply_popup_theme(
         dlg,
         f"""
         QLabel {{
-            color: {_TEXT_PRI};
+            color: {pri};
             font-size: {FONT_SIZE_BODY}px;
             background: transparent;
         }}
@@ -120,7 +170,7 @@ def _build_dialog(title: str, text: str, icon: QMessageBox.Icon, buttons: list[t
 
     msg_lbl = QLabel(text)
     msg_lbl.setWordWrap(True)
-    msg_lbl.setStyleSheet(muted_label_style(color=_TEXT_SEC, size=FONT_SIZE_MICRO))
+    msg_lbl.setStyleSheet(muted_label_style(color=sec, size=FONT_SIZE_MICRO))
     text_v.addWidget(msg_lbl)
 
     content_row.addWidget(text_wrap, stretch=1)
@@ -134,11 +184,11 @@ def _build_dialog(title: str, text: str, icon: QMessageBox.Icon, buttons: list[t
         btn = QPushButton(label)
         btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
         if code == default_btn and danger_default:
-            btn.setStyleSheet(_DANGER_BTN)
+            btn.setStyleSheet(danger_btn)
         elif code == default_btn:
-            btn.setStyleSheet(_PRIMARY_BTN)
+            btn.setStyleSheet(primary_btn)
         else:
-            btn.setStyleSheet(_SECONDARY_BTN)
+            btn.setStyleSheet(secondary_btn)
         btn.clicked.connect(lambda _=False, c=code: dlg.done(c))
         btn_row.addWidget(btn)
         btn_widgets[code] = btn

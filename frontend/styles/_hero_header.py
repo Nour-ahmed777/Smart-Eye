@@ -1,8 +1,9 @@
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont
 from PySide6.QtCore import Qt
 
 from frontend.app_theme import safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.styles._colors import _BG_RAISED, _BORDER, _TEXT_MUTED, _TEXT_PRI, _TEXT_SEC
 from frontend.ui_tokens import (
     FONT_SIZE_LABEL,
@@ -46,11 +47,9 @@ def make_hero_header(
         icon_lbl = QLabel()
         icon_lbl.setFixedSize(SIZE_ICON_64, SIZE_ICON_64)
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pix = QPixmap(icon_path)
+        pix = themed_icon_pixmap(icon_path, SIZE_ICON_64, SIZE_ICON_64)
         if not pix.isNull():
-            icon_lbl.setPixmap(
-                pix.scaled(SIZE_ICON_64, SIZE_ICON_64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            icon_lbl.setPixmap(pix)
         icon_lbl.setStyleSheet("background: transparent; border: none;")
         iw.addWidget(icon_lbl)
     if left_widget is not None:

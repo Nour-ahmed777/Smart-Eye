@@ -10,6 +10,7 @@ from frontend.styles._colors import (
     _TEXT_ON_ACCENT,
     _TEXT_PRI,
 )
+from frontend.icon_theme import themed_icon_path
 from frontend.ui_tokens import (
     FONT_SIZE_LABEL,
     FONT_WEIGHT_SEMIBOLD,
@@ -29,6 +30,7 @@ from frontend.ui_tokens import (
 
 
 def date_popup_styles() -> str:
+    arrow_down = themed_icon_path("frontend/assets/icons/arrow_down.png")
     return f"""
 QDateEdit::drop-down {{
     border: none;
@@ -36,7 +38,7 @@ QDateEdit::drop-down {{
     width: {SPACE_20}px;
 }}
 QDateEdit::down-arrow {{
-    image: url(frontend/assets/icons/arrow_down.png);
+    image: url({arrow_down});
     width: {SPACE_10}px;
     height: {SPACE_10}px;
 }}

@@ -1,12 +1,21 @@
-﻿from frontend.styles.theme_parts import build_dark_theme, build_sidebar_dark
-from frontend.styles._colors import _TEXT_PRI
-
-DARK_THEME = build_dark_theme()
-SIDEBAR_DARK = build_sidebar_dark()
+﻿import importlib
 
 
 def get_theme(name="dark"):
-    return DARK_THEME + SIDEBAR_DARK
+    # Rebuild theme from current settings/theme json so it can apply live.
+    import frontend.styles._colors as _colors
+    import frontend.styles.theme_parts as _theme_parts
+
+    importlib.reload(_colors)
+    _theme_parts = importlib.reload(_theme_parts)
+
+    return _theme_parts.build_dark_theme() + _theme_parts.build_sidebar_dark()
+
+
+def _current_text_pri() -> str:
+    import frontend.styles._colors as _colors
+
+    return str(getattr(_colors, "_TEXT_PRI", "#e6edf3"))
 
 
 def safe_set_point_size(qfont, size, default=12):
@@ -20,9 +29,10 @@ def safe_set_point_size(qfont, size, default=12):
 
 
 def page_base_styles(font_size: int = 13) -> str:
+    text_pri = _current_text_pri()
     return f"""
     QWidget {{
-        color: {_TEXT_PRI};
+        color: {text_pri};
         font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
         font-size: {font_size}px;
         background-color: transparent;

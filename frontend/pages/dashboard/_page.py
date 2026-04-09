@@ -21,6 +21,7 @@ from backend.camera.camera_manager import get_camera_manager
 from backend.repository import db
 from backend.models import model_loader
 from frontend.app_theme import page_base_styles, safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.widgets.alarm_badge_widget import AlarmBadgeWidget
 from frontend.widgets.multi_feed_widget import MultiFeedWidget
 from frontend.widgets.performance_widget import PerformanceWidget
@@ -110,11 +111,9 @@ class DashboardPage(QWidget):
 
         _icon_lbl = QLabel()
         _icon_lbl.setFixedSize(SIZE_ICON_LG, SIZE_ICON_LG)
-        _icon_pix = QPixmap("frontend/assets/icons/dashboard.png")
+        _icon_pix = themed_icon_pixmap("frontend/assets/icons/dashboard.png", SIZE_ICON_LG, SIZE_ICON_LG)
         if not _icon_pix.isNull():
-            _icon_lbl.setPixmap(
-                _icon_pix.scaled(SIZE_ICON_LG, SIZE_ICON_LG, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            _icon_lbl.setPixmap(_icon_pix)
         _hl.addWidget(_icon_lbl)
 
         _title = QLabel("Live Dashboard")

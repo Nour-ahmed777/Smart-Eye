@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from backend.repository import db
 from backend.pipeline.detector_manager import get_manager, notify_plugins_changed
 from frontend.app_theme import page_base_styles, safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.dialogs import apply_popup_theme
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.styles._colors import (
@@ -129,14 +130,6 @@ _STYLESHEET = (
 QScrollArea {{ border: none; background: transparent; }}
 {_FORM_INPUTS}
 {_FORM_COMBO}
-QLineEdit#models_field, QComboBox#models_field, QSpinBox#models_field {{
-    background: {_BG_BASE};
-    border: {SPACE_XXXS}px solid {_BORDER_DARK};
-}}
-QLineEdit#models_field:focus, QComboBox#models_field:focus, QSpinBox#models_field:focus {{
-    background: {_BG_SURFACE};
-    border-color: {_ACCENT};
-}}
 QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_SM}px; margin: {SPACE_XXS}px {SPACE_XXXS}px; }}
 QScrollBar::handle:vertical {{
     background: {_ACCENT_HI_BG_28}; min-height: {SPACE_28}px; border-radius: {RADIUS_SM}px;
@@ -229,10 +222,11 @@ def _class_swatch_style(color_hex: str, *, selected: bool = False) -> str:
 
 
 def _pick_bbox_color(parent: QWidget, current_color: str) -> str | None:
-    selected = [QColor(current_color) if QColor(current_color).isValid() else QColor(_CLASS_COLOR_1)]
-
-    dlg = QDialog(parent)
+    initial = QColor(current_color) if QColor(current_color).isValid() else QColor(_CLASS_COLOR_1)
+    dlg = QColorDialog(initial, parent)
     dlg.setWindowTitle("Pick Bbox Color")
+    dlg.setOption(QColorDialog.ColorDialogOption.DontUseNativeDialog, True)
+    dlg.setOption(QColorDialog.ColorDialogOption.ShowAlphaChannel, False)
     apply_popup_theme(
         dlg,
         f"""
@@ -241,83 +235,40 @@ def _pick_bbox_color(parent: QWidget, current_color: str) -> str | None:
             font-size: {FONT_SIZE_LABEL}px;
             background: transparent;
         }}
+        QLineEdit, QSpinBox {{
+            background-color: {_BG_BASE};
+            border: {SPACE_XXXS}px solid {_BORDER_DARK};
+            border-radius: {RADIUS_MD}px;
+            color: {_TEXT_PRI};
+            min-height: {SIZE_CONTROL_22}px;
+            padding: 0 {SPACE_10}px;
+        }}
+        QLineEdit:focus, QSpinBox:focus {{
+            background-color: {_BG_SURFACE};
+            border-color: {_ACCENT};
+        }}
+        QPushButton {{
+            border: {SPACE_XXXS}px solid {_BORDER};
+            border-radius: {RADIUS_MD}px;
+            background-color: transparent;
+            color: {_TEXT_SEC};
+            min-height: {SIZE_CONTROL_MD}px;
+            min-width: {SIZE_BTN_W_100}px;
+            padding: 0 {SPACE_MD}px;
+            font-weight: {FONT_WEIGHT_SEMIBOLD};
+        }}
+        QPushButton:hover {{
+            background-color: {_BG_SURFACE};
+            border-color: {_TEXT_SEC};
+            color: {_TEXT_PRI};
+        }}
         """,
     )
-    dlg.setModal(True)
-    dlg.setFixedWidth(420)
-
-    lay = QVBoxLayout(dlg)
-    lay.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
-    lay.setSpacing(SPACE_MD)
-
-    title = QLabel("Choose any color")
-    title.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_BODY, weight=FONT_WEIGHT_BOLD))
-    lay.addWidget(title)
-
-    row = QHBoxLayout()
-    row.setSpacing(SPACE_SM)
-    preview = QLabel()
-    preview.setFixedSize(34, 34)
-
-    def _apply_preview() -> None:
-        preview.setStyleSheet(
-            f"background:{selected[0].name()}; border:{SPACE_XXXS}px solid {_BORDER}; border-radius:{RADIUS_6}px;"
-        )
-
-    _apply_preview()
-    row.addWidget(preview)
-
-    hex_edit = QLineEdit(selected[0].name())
-    hex_edit.setPlaceholderText("#RRGGBB")
-    hex_edit.setStyleSheet(_FORM_INPUTS)
-    hex_edit.setObjectName("models_field")
-    hex_edit.setFixedHeight(SIZE_CONTROL_MD)
-    row.addWidget(hex_edit, stretch=1)
-
-    pick_btn = QPushButton("Choose...")
-    pick_btn.setFixedSize(SIZE_BTN_W_100, SIZE_CONTROL_MD)
-    pick_btn.setStyleSheet(_SECONDARY_BTN)
-
-    def _choose_any_color() -> None:
-        c = QColorDialog.getColor(selected[0], dlg, "Pick Any Color")
+    if dlg.exec() == QDialog.DialogCode.Accepted:
+        c = dlg.selectedColor()
         if c.isValid():
-            selected[0] = c
-            hex_edit.setText(c.name())
-            _apply_preview()
-
-    pick_btn.clicked.connect(_choose_any_color)
-    row.addWidget(pick_btn)
-    lay.addLayout(row)
-
-    def _on_hex_changed(text: str) -> None:
-        val = text.strip()
-        if not val:
-            return
-        if not val.startswith("#"):
-            val = f"#{val}"
-        c = QColor(val)
-        if c.isValid():
-            selected[0] = c
-            _apply_preview()
-
-    hex_edit.textChanged.connect(_on_hex_changed)
-
-    actions = QHBoxLayout()
-    actions.addStretch()
-    cancel_btn = QPushButton("Cancel")
-    cancel_btn.setFixedSize(SIZE_BTN_W_100, SIZE_CONTROL_MD)
-    cancel_btn.setStyleSheet(_SECONDARY_BTN)
-    cancel_btn.clicked.connect(dlg.reject)
-    actions.addWidget(cancel_btn)
-
-    ok_btn = QPushButton("OK")
-    ok_btn.setFixedSize(SIZE_BTN_W_100, SIZE_CONTROL_MD)
-    ok_btn.setStyleSheet(_PRIMARY_BTN)
-    ok_btn.clicked.connect(dlg.accept)
-    actions.addWidget(ok_btn)
-    lay.addLayout(actions)
-
-    return selected[0].name() if dlg.exec() == QDialog.DialogCode.Accepted else None
+            return c.name()
+    return None
 
 
 class ModelsPage(QWidget):
@@ -344,13 +295,9 @@ class ModelsPage(QWidget):
         hl.setSpacing(SPACE_MD)
         icon_lbl = QLabel()
         icon_lbl.setFixedSize(SIZE_CONTROL_SM, SIZE_CONTROL_SM)
-        _pix = QPixmap("frontend/assets/icons/object.png")
+        _pix = themed_icon_pixmap("frontend/assets/icons/object.png", SIZE_CONTROL_SM, SIZE_CONTROL_SM)
         if not _pix.isNull():
-            icon_lbl.setPixmap(
-                _pix.scaled(
-                    SIZE_CONTROL_SM, SIZE_CONTROL_SM, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-                )
-            )
+            icon_lbl.setPixmap(_pix)
         hl.addWidget(icon_lbl)
         title = QLabel("Models & Plugins")
         tf = QFont()
@@ -448,8 +395,8 @@ class ModelsPage(QWidget):
         cl.addLayout(st_row)
 
         self._fm_buffalo_combo = QComboBox()
-        self._fm_buffalo_combo.setObjectName("models_field")
         self._fm_buffalo_combo.setFixedHeight(SIZE_CONTROL_MD)
+        self._fm_buffalo_combo.setStyleSheet(_FORM_COMBO)
         from backend.models.face_model import AVAILABLE_MODELS
 
         for key, desc in AVAILABLE_MODELS.items():
@@ -469,7 +416,7 @@ class ModelsPage(QWidget):
         path_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         path_row.addWidget(path_lbl)
         self._fm_model_path = QLineEdit()
-        self._fm_model_path.setObjectName("models_field")
+        self._fm_model_path.setStyleSheet(_FORM_INPUTS)
         self._fm_model_path.setPlaceholderText("~/.insightface  (leave blank for default)")
         self._fm_model_path.setFixedHeight(SIZE_CONTROL_MD)
         _fm_folder_action = self._fm_model_path.addAction(
@@ -484,17 +431,20 @@ class ModelsPage(QWidget):
         act_row.addStretch()
         self._fm_save_reload_btn = QPushButton("Save")
         self._fm_save_reload_btn.setFixedHeight(SIZE_CONTROL_MD)
-        self._fm_save_reload_btn.setFixedWidth(SIZE_FIELD_W_SM)
+        self._fm_save_reload_btn.setFixedWidth(SIZE_BTN_W_160)
         self._fm_save_reload_btn.setStyleSheet(_PRIMARY_BTN)
         self._fm_save_reload_btn.clicked.connect(self._fm_save_and_reload)
         act_row.addWidget(self._fm_save_reload_btn)
+        cl.addLayout(act_row)
 
         self._status_lbl = QLabel("")
         self._status_lbl.setStyleSheet(text_style(_SUCCESS, size=FONT_SIZE_LABEL, weight=FONT_WEIGHT_BOLD))
         self._status_lbl.setContentsMargins(0, 0, 0, 0)
         self._status_lbl.setVisible(False)
-        act_row.addWidget(self._status_lbl)
-        cl.addLayout(act_row)
+        status_row = QHBoxLayout()
+        status_row.addStretch()
+        status_row.addWidget(self._status_lbl)
+        cl.addLayout(status_row)
 
         submodels_card = QWidget()
         submodels_card.setStyleSheet(card_shell_style())
@@ -619,7 +569,7 @@ class ModelsPage(QWidget):
         ac_outer.addLayout(ac)
 
         self._ap_name = QLineEdit()
-        self._ap_name.setObjectName("models_field")
+        self._ap_name.setStyleSheet(_FORM_INPUTS)
         self._ap_name.setPlaceholderText("Unique plugin name")
         self._ap_name.setFixedHeight(SIZE_CONTROL_MD)
         ac.addWidget(_field_row("Name *", self._ap_name))
@@ -635,7 +585,7 @@ class ModelsPage(QWidget):
         w_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         weights_row.addWidget(w_lbl)
         self._ap_weight = QLineEdit()
-        self._ap_weight.setObjectName("models_field")
+        self._ap_weight.setStyleSheet(_FORM_INPUTS)
         self._ap_weight.setPlaceholderText(".onnx / .pt / .pth file path")
         self._ap_weight.setFixedHeight(SIZE_CONTROL_MD)
         _folder_action = self._ap_weight.addAction(
@@ -657,7 +607,7 @@ class ModelsPage(QWidget):
         t_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         opts_row.addWidget(t_lbl)
         self._ap_type = QComboBox()
-        self._ap_type.setObjectName("models_field")
+        self._ap_type.setStyleSheet(_FORM_COMBO)
         self._ap_type.addItems(["onnx"])
         self._ap_type.setFixedWidth(SIZE_BTN_W_LG)
         self._ap_type.setFixedHeight(SIZE_CONTROL_MD)
@@ -668,7 +618,7 @@ class ModelsPage(QWidget):
         c_lbl.setStyleSheet(_FORM_LABEL_STYLE)
         opts_row.addWidget(c_lbl)
         self._ap_conf = QSpinBox()
-        self._ap_conf.setObjectName("models_field")
+        self._ap_conf.setStyleSheet(_FORM_INPUTS)
         self._ap_conf.setRange(1, 100)
         self._ap_conf.setValue(50)
         self._ap_conf.setSuffix("%")
@@ -784,10 +734,7 @@ class ModelsPage(QWidget):
 
         gender_row = next((sm for sm in submodels if sm.get("task") == "genderage"), None) if submodels else None
         if gender_row:
-            if not db.get_bool("gender_inference_enabled", True):
-                self._fm_gender_status.setText("Gender: disabled in settings")
-                self._fm_gender_status.setStyleSheet(_STATUS_WARN_STYLE)
-            elif gender_row.get("loaded") and gender_row.get("enabled"):
+            if gender_row.get("loaded") and gender_row.get("enabled"):
                 self._fm_gender_status.setText("Gender: ready")
                 self._fm_gender_status.setStyleSheet(_STATUS_OK_STYLE)
             elif gender_row.get("enabled"):
@@ -927,7 +874,7 @@ class ModelsPage(QWidget):
         self._fm_model_status.setText("⏳ Loading model — please wait…")
         self._fm_model_status.setStyleSheet(_STATUS_WARN_STYLE)
         self._fm_save_reload_btn.setEnabled(False)
-        self._fm_save_reload_btn.setText("Loading…")
+        self._fm_save_reload_btn.setText("Loading...")
 
         from PySide6.QtCore import QThread, Signal as _Sig
 
@@ -958,6 +905,16 @@ class ModelsPage(QWidget):
                 self._fm_progress.close()
         self._fm_progress = QProgressDialog("Loading InsightFace model…", None, 0, 0, self)
         self._fm_progress.setWindowTitle("Loading")
+        apply_popup_theme(
+            self._fm_progress,
+            f"""
+            QLabel {{
+                color: {_TEXT_PRI};
+                font-size: {FONT_SIZE_BODY}px;
+                background: transparent;
+            }}
+            """,
+        )
         self._fm_progress.setWindowModality(Qt.WindowModality.ApplicationModal)
         self._fm_progress.setCancelButton(None)
         self._fm_progress.setMinimumDuration(0)
@@ -970,7 +927,7 @@ class ModelsPage(QWidget):
                 self._fm_progress.close()
                 self._fm_progress = None
             self._fm_save_reload_btn.setEnabled(True)
-            self._fm_save_reload_btn.setText("Save & Reload Model")
+            self._fm_save_reload_btn.setText("Save")
             if ok:
                 from backend.models.model_loader import get_face_model
 

@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from backend.camera.playback_thread import PlaybackThread
 from backend.repository import db
 from frontend.app_theme import page_base_styles, safe_set_point_size
+from frontend.icon_theme import themed_icon_pixmap
 from frontend.dialogs import apply_popup_theme
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.widgets.video_widget import VideoWidget
@@ -231,11 +232,9 @@ class PlaybackPage(QWidget):
 
         icon_lbl = QLabel()
         icon_lbl.setFixedSize(SIZE_CONTROL_SM, SIZE_CONTROL_SM)
-        pix = QPixmap("frontend/assets/icons/playback.png")
+        pix = themed_icon_pixmap("frontend/assets/icons/playback.png", SIZE_CONTROL_SM, SIZE_CONTROL_SM)
         if not pix.isNull():
-            icon_lbl.setPixmap(
-                pix.scaled(SIZE_CONTROL_SM, SIZE_CONTROL_SM, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
+            icon_lbl.setPixmap(pix)
         hl.addWidget(icon_lbl)
 
         title = QLabel("Playback & Review")
@@ -491,7 +490,8 @@ QSlider::handle:horizontal {{
 
         self._filters_btn = QToolButton()
         self._filters_btn.setText("Filters")
-        self._filters_btn.setIcon(QIcon("frontend/assets/icons/arrow_down.png"))
+        _flt = themed_icon_pixmap("frontend/assets/icons/arrow_down.png", SIZE_ICON_10, SIZE_ICON_10)
+        self._filters_btn.setIcon(QIcon(_flt) if not _flt.isNull() else QIcon("frontend/assets/icons/arrow_down.png"))
         self._filters_btn.setIconSize(QSize(SIZE_ICON_10, SIZE_ICON_10))
         self._filters_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._filters_btn.setStyleSheet(filter_tool_button_style())
@@ -1128,7 +1128,7 @@ QSlider::handle:horizontal {{
 
     def _sync_play_button(self, paused: bool) -> None:
         icon_path = "frontend/assets/icons/play.png" if paused else "frontend/assets/icons/pause.png"
-        pix = QPixmap(icon_path)
+        pix = themed_icon_pixmap(icon_path, int(SIZE_SECTION_H * 0.52), int(SIZE_SECTION_H * 0.52))
         if not pix.isNull():
             self._play_btn.setIcon(QIcon(pix))
             self._play_btn.setIconSize(QSize(int(SIZE_SECTION_H * 0.52), int(SIZE_SECTION_H * 0.52)))

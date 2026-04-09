@@ -45,6 +45,7 @@ from frontend.styles._colors import (
     _WHITE_02,
     _WHITE_03,
 )
+from frontend.icon_theme import themed_icon_path
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
     FONT_SIZE_CAPTION,
@@ -184,7 +185,6 @@ QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{
     background-color: transparent;
 }}
 QLineEdit:hover, QTextEdit:hover {{
-    /* no change - frameless */
 }}
 QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled,
 QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
@@ -195,6 +195,8 @@ QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
 
 
 def _spin_combo_styles() -> str:
+    arrow_up = themed_icon_path("frontend/assets/icons/arrow_up.png")
+    arrow_down = themed_icon_path("frontend/assets/icons/arrow_down.png")
     return f"""
 QSpinBox, QDoubleSpinBox {{
     background-color: transparent;
@@ -222,21 +224,22 @@ QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
     background: {_ACCENT_HI_BG_12};
 }}
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{
-    image: url(frontend/assets/icons/arrow_up.png);
+    image: url({arrow_up});
     width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px;
 }}
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{
-    image: url(frontend/assets/icons/arrow_down.png);
+    image: url({arrow_down});
     width: {SIZE_ICON_10}px; height: {SIZE_ICON_10}px;
 }}
 
 QComboBox {{
     background-color: transparent;
-    border: none;
-    border-radius: {RADIUS_NONE}px;
+    border: {SPACE_XXXS}px solid {_BORDER};
+    border-radius: {RADIUS_MD}px;
     padding: {SPACE_6}px {SPACE_34}px {SPACE_6}px {SPACE_MD}px;
     color: {_TEXT_PRI};
     min-height: {SIZE_SECTION_H}px;
+    combobox-popup: 0;
 }}
 QComboBox:hover {{ }}
 QComboBox:focus {{ }}
@@ -246,22 +249,28 @@ QComboBox::drop-down {{
     width: {SPACE_20}px;
 }}
 QComboBox::down-arrow {{
-    image: url(frontend/assets/icons/arrow_down.png);
+    image: url({arrow_down});
     width: {SIZE_ICON_12}px;
     height: {SIZE_ICON_12}px;
 }}
 QComboBox QAbstractItemView {{
     background-color: {_BG_OVERLAY};
     border: {SPACE_XXXS}px solid {_BORDER};
+    border-radius: {RADIUS_MD}px;
     color: {_TEXT_PRI};
     selection-background-color: {_ACCENT_BG_22};
     selection-color: {_TEXT_PRI};
     padding: {SPACE_XS}px;
+    margin: {SPACE_XXXS}px;
     outline: none;
+}}
+QComboBox QAbstractItemView::viewport {{
+    border-radius: {RADIUS_MD}px;
 }}
 QComboBox QAbstractItemView::item {{
     padding: {SPACE_6}px {SPACE_MD}px;
     border-radius: {RADIUS_5}px;
+    margin: 1px {SPACE_XXXS}px;
     min-height: {SIZE_ITEM_SM}px;
 }}
 QComboBox QAbstractItemView::item:hover {{
@@ -295,6 +304,7 @@ QSlider::sub-page:horizontal {{
 
 
 def _checkbox_styles() -> str:
+    checkmark = themed_icon_path("frontend/assets/icons/checkmark.png")
     return f"""
 QCheckBox {{
     spacing: {SPACE_SM}px;
@@ -312,7 +322,7 @@ QCheckBox::indicator:hover {{ border-color: {_TEXT_DIM}; }}
 QCheckBox::indicator:checked {{
     background: {_ACCENT_GRAD_START};
     border-color: {_ACCENT_GRAD_END};
-    image: url(frontend/assets/icons/checkmark.png);
+    image: url({checkmark});
 }}
 """
 
