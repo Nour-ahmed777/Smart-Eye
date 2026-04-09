@@ -8,7 +8,7 @@ from pathlib import Path
 from datetime import datetime
 
 import cv2
-from PySide6.QtCore import qInstallMessageHandler
+from PySide6.QtCore import QTimer, qInstallMessageHandler
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
@@ -164,7 +164,7 @@ def main():
     if db.get_bool("auto_start_cameras", False):
         from backend.camera.camera_manager import get_camera_manager
 
-        get_camera_manager().start_all_enabled()
+        QTimer.singleShot(150, get_camera_manager().start_all_enabled)
     exit_code = app.exec()
     monitor.stop()
     try:

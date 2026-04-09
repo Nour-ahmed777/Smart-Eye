@@ -120,6 +120,12 @@ class MainWindow(QMainWindow):
             self._sidebar.set_active("dashboard")
             self._current_key = "dashboard"
             self._mark_active("dashboard")
+            try:
+                page = self._pages.get("dashboard")
+                if page is not None and hasattr(page, "on_activated"):
+                    page.on_activated()
+            except Exception:
+                pass
             self._log_page_state("startup")
         self._sidebar.set_access(set(), False)
         if self._auth_required:

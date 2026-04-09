@@ -518,15 +518,15 @@ class DashboardPage(QWidget):
                     active_ids.add(cid)
                     if not self._multi_feed.get_widget(cid):
                         self._multi_feed.add_feed(cid, cam.get("name", f"Cam {cid}"))
-                        with contextlib.suppress(Exception):
-                            thread.frame_ready.disconnect(self._on_frame)
-                        with contextlib.suppress(Exception):
-                            thread.fps_updated.disconnect(self._on_fps)
-                        with contextlib.suppress(Exception):
-                            thread.error_occurred.disconnect(self._on_error)
-                        thread.frame_ready.connect(self._on_frame)
-                        thread.fps_updated.connect(self._on_fps)
-                        thread.error_occurred.connect(self._on_error)
+                    with contextlib.suppress(Exception):
+                        thread.frame_ready.disconnect(self._on_frame)
+                    with contextlib.suppress(Exception):
+                        thread.fps_updated.disconnect(self._on_fps)
+                    with contextlib.suppress(Exception):
+                        thread.error_occurred.disconnect(self._on_error)
+                    thread.frame_ready.connect(self._on_frame)
+                    thread.fps_updated.connect(self._on_fps)
+                    thread.error_occurred.connect(self._on_error)
             for wid in list(self._multi_feed.get_ids()):
                 if wid not in active_ids:
                     self._multi_feed.remove_feed(wid)
