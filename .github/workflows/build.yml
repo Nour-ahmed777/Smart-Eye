@@ -143,24 +143,6 @@ jobs:
             pkg_resources
             pip
             doctest
-            scipy.stats
-            scipy.optimize
-            scipy.signal
-            scipy.linalg
-            scipy.sparse
-            scipy.sparse.linalg
-            scipy.sparse.csgraph
-            scipy.interpolate
-            scipy.integrate
-            scipy.fft
-            scipy.ndimage
-            scipy.io
-            scipy.io.matlab
-            scipy.io.wavfile
-            scipy.cluster
-            scipy.odr
-            scipy.special
-            scipy.misc
           noinclude-data-files: |
             qt6webenginecore.dll
             qt6webenginequick.dll

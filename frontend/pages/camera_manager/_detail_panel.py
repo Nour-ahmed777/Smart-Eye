@@ -285,11 +285,15 @@ class CameraDetailPanel(QWidget):
                 _ptimer.timeout.connect(_tick)
                 _ptimer.start()
 
-                def _cleanup(_t=_thread, _fn=_on_frame, _tm=_ptimer):
-                    _tm.stop()
+                def _cleanup(_obj=None, _t=_thread, _fn=_on_frame, _tm=_ptimer):
                     try:
-                        _t.frame_ready.disconnect(_fn)
-                    except (RuntimeError, TypeError):
+                        _tm.stop()
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(_t, "frame_ready"):
+                            _t.frame_ready.disconnect(_fn)
+                    except (RuntimeError, TypeError, AttributeError):
                         logger.debug("Failed to disconnect preview frame signal cam_id=%s", cam.get("id"), exc_info=True)
 
                 preview_lbl.destroyed.connect(_cleanup)
@@ -560,11 +564,15 @@ class CameraDetailPanel(QWidget):
                 _ptimer.timeout.connect(_tick)
                 _ptimer.start()
 
-                def _cleanup(_t=_thread, _fn=_on_frame, _tm=_ptimer):
-                    _tm.stop()
+                def _cleanup(_obj=None, _t=_thread, _fn=_on_frame, _tm=_ptimer):
                     try:
-                        _t.frame_ready.disconnect(_fn)
-                    except (RuntimeError, TypeError):
+                        _tm.stop()
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(_t, "frame_ready"):
+                            _t.frame_ready.disconnect(_fn)
+                    except (RuntimeError, TypeError, AttributeError):
                         logger.debug("Failed to disconnect edit preview frame signal cam_id=%s", cam.get("id"), exc_info=True)
 
                 preview_lbl.destroyed.connect(_cleanup)

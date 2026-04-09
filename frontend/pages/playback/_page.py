@@ -3,6 +3,7 @@
 import logging
 import os
 import sqlite3
+import contextlib
 from datetime import datetime
 
 import cv2
@@ -161,6 +162,9 @@ _TIME_LABEL_STYLE = text_style(_TEXT_SEC, size=FONT_SIZE_LABEL, extra=f"padding-
 _BG_BASE_STYLE = f"background: {_BG_BASE};"
 _VIDEO_CARD_STYLE = f"background: {_BLACK}; border-radius: {RADIUS_LG}px;"
 _SPEED_LABEL_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_CAPTION, weight=FONT_WEIGHT_BOLD)
+
+
+_RETIRED_PLAYBACK_THREADS: list[PlaybackThread] = []
 
 
 def _icon_btn(icon_path: str, size: int = 36, danger: bool = False) -> QPushButton:
@@ -555,11 +559,11 @@ QSlider::handle:horizontal {{
 
     def on_deactivated(self) -> None:
         self._seek_timer.stop()
-        self._stop()
+        self._stop(wait_ms=1500)
 
     def on_unload(self) -> None:
         self._seek_timer.stop()
-        self._stop()
+        self._stop(wait_ms=5000)
 
     def _open_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -664,16 +668,49 @@ QSlider::handle:horizontal {{
             self._playback_thread.pause()
             self._sync_play_button(paused=True)
 
-    def _stop(self) -> None:
-        if self._playback_thread:
-            self._playback_thread.stop()
-            self._playback_thread.wait(2000)
-            self._playback_thread = None
+    def _stop(self, wait_ms: int = 1500) -> None:
+        thread = self._playback_thread
+        self._playback_thread = None
+        if thread:
+            self._detach_playback_thread_signals(thread)
+            thread.stop()
+            if thread.isRunning() and not thread.wait(max(250, int(wait_ms))):
+                logger.warning("Playback thread is still running; deferring destruction until finished")
+                self._retain_playback_thread_until_finished(thread)
+            else:
+                thread.deleteLater()
         self._video_widget.show_placeholder("No video loaded")
         self._timeline_slider.setValue(0)
         self._fps_label.setText("FPS: —")
         self._time_label.setText("00:00:00 / 00:00:00")
         self._sync_play_button(paused=True)
+
+    def _detach_playback_thread_signals(self, thread: PlaybackThread) -> None:
+        with contextlib.suppress(Exception):
+            thread.frame_ready.disconnect(self._on_frame)
+        with contextlib.suppress(Exception):
+            thread.detection_event.disconnect(self._on_detection_event)
+        with contextlib.suppress(Exception):
+            thread.playback_finished.disconnect(self._on_finished)
+        with contextlib.suppress(Exception):
+            thread.clip_saved.disconnect(self._on_clip_saved)
+        with contextlib.suppress(Exception):
+            thread.clip_failed.disconnect(self._on_clip_failed)
+
+    def _retain_playback_thread_until_finished(self, thread: PlaybackThread) -> None:
+        if thread in _RETIRED_PLAYBACK_THREADS:
+            return
+        _RETIRED_PLAYBACK_THREADS.append(thread)
+
+        def _cleanup() -> None:
+            with contextlib.suppress(Exception):
+                if thread in _RETIRED_PLAYBACK_THREADS:
+                    _RETIRED_PLAYBACK_THREADS.remove(thread)
+            with contextlib.suppress(Exception):
+                thread.deleteLater()
+
+        with contextlib.suppress(Exception):
+            thread.finished.connect(_cleanup)
 
     def _on_seek_pressed(self) -> None:
         self._user_seeking = True

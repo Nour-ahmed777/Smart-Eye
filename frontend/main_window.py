@@ -1,4 +1,5 @@
-﻿import logging
+﻿import contextlib
+import logging
 
 from PySide6.QtCore import (
     QByteArray,
@@ -498,6 +499,23 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
 
     def closeEvent(self, event):
+        with contextlib.suppress(Exception):
+            self._alert_timer.stop()
+        with contextlib.suppress(Exception):
+            self._cleanup_timer.stop()
+
+        # Stop page-owned workers (playback, timers, etc.) before global service teardown.
+        for key, page in list(self._pages.items()):
+            if page is None:
+                continue
+            with contextlib.suppress(Exception):
+                if hasattr(page, "on_unload"):
+                    page.on_unload()
+
+        if self._current_key:
+            with contextlib.suppress(Exception):
+                self._release_services(self._current_key)
+
         from backend.camera.camera_manager import get_camera_manager
 
         get_camera_manager().stop_all()

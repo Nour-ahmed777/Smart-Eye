@@ -15,6 +15,13 @@ _CLASS_COLOR_TTL = 5.0
 _CACHE_LOCK = threading.Lock()
 
 
+def _as_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
 def _get_plugin_classes_cached(enabled_only=True):
     now = time.time()
     with _CACHE_LOCK:
@@ -79,6 +86,8 @@ def merge_results(detection_results, camera_id, zone_info=None):
             "confidence": f.get("confidence", 0.0),
             "gender_confidence": f.get("gender_confidence", 0.0),
             "liveness": f.get("liveness", 1.0),
+            "track_vx": _as_float(f.get("track_vx", 0.0)),
+            "track_vy": _as_float(f.get("track_vy", 0.0)),
         }
         for f in faces
     ]
@@ -95,6 +104,8 @@ def merge_results(detection_results, camera_id, zone_info=None):
                 "confidence": gf.get("confidence", 0.0),
                 "gender_confidence": gf.get("gender_confidence", 0.0),
                 "liveness": gf.get("liveness", 1.0),
+                "track_vx": _as_float(gf.get("track_vx", 0.0)),
+                "track_vy": _as_float(gf.get("track_vy", 0.0)),
                 "ghost": True,
             }
         )

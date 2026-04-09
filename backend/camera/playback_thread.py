@@ -2,6 +2,7 @@ import collections
 import logging
 import os
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import cv2
 import numpy as np
@@ -37,6 +38,11 @@ class PlaybackThread(QThread):
         self._record_enabled = False
         self._frame_buffer: collections.deque = collections.deque()
         self._video_fps_actual: float = 30.0
+        try:
+            self._infer_target_fps = float(db.get_float("playback_infer_target_fps", 12.0) or 12.0)
+        except Exception:
+            self._infer_target_fps = 12.0
+        self._infer_target_fps = max(1.0, min(30.0, self._infer_target_fps))
 
     @property
     def camera_id(self):
@@ -52,22 +58,30 @@ class PlaybackThread(QThread):
         self._total_frames = int(self._cap.get(cv2.CAP_PROP_FRAME_COUNT))
         video_fps = self._cap.get(cv2.CAP_PROP_FPS) or 30
         self._video_fps_actual = video_fps
+        infer_stride = max(1, int(round(video_fps / max(1.0, self._infer_target_fps))))
         logging.getLogger(__name__).info(
-            "Playback: start path=%s frames=%s fps=%.2f cam_id=%s",
+            "Playback: start path=%s frames=%s fps=%.2f cam_id=%s infer_target_fps=%.1f stride=%s",
             self._video_path,
             self._total_frames,
             video_fps,
             self._camera_id,
+            self._infer_target_fps,
+            infer_stride,
         )
         buf_max = int(video_fps * 5)
         detector = get_manager()
         pipeline = PipelineService(self._camera_id)
+        infer_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"play-infer-cam{self._camera_id}")
+        pending_future: Future | None = None
+        last_detect_state: dict = {"triggered_rules": [], "frame_index": 0}
+        last_detect_frame_idx = -1
         frame_idx = 0
         _clip_cooldown = 0
 
-        def _evaluate_frame(frame, w, h):
+        def _evaluate_frame(frame, w, h, infer_idx):
             detection_results = detector.process_frame(frame, self._camera_id)
-            return build_state(detection_results, self._camera_id, w, h)
+            primary, triggered = build_state(detection_results, self._camera_id, w, h)
+            return infer_idx, frame, w, h, primary, triggered
 
         def _handle_triggers(primary_state, triggered, frame, frame_idx, video_fps, fw, fh):
             nonlocal _clip_cooldown
@@ -105,7 +119,7 @@ class PlaybackThread(QThread):
                 on_detection_event=_on_event,
             )
 
-        while self._running:
+        while self._running and not self.isInterruptionRequested():
             force_read = False
             if self._seek_frame >= 0:
                 self._cap.set(cv2.CAP_PROP_POS_FRAMES, self._seek_frame)
@@ -128,13 +142,59 @@ class PlaybackThread(QThread):
                     self._frame_buffer.popleft()
 
             h, w = frame.shape[:2]
-            if self._detection_enabled:
-                primary_state, all_triggered = _evaluate_frame(frame, w, h)
-                _handle_triggers(primary_state, all_triggered, frame, frame_idx, video_fps, w, h)
-            else:
-                all_triggered = []
-                primary_state = {"triggered_rules": [], "frame_index": frame_idx}
-            primary_state["triggered_rules"] = [r["name"] for r in all_triggered]
+
+            if pending_future is not None and pending_future.done():
+                try:
+                    det_idx, det_frame, det_w, det_h, det_state, det_triggered = pending_future.result(timeout=0)
+                    if det_idx >= last_detect_frame_idx:
+                        _handle_triggers(det_state, det_triggered, det_frame, det_idx, video_fps, det_w, det_h)
+                        det_state["triggered_rules"] = [r["name"] for r in det_triggered]
+                        det_state["frame_index"] = det_idx
+                        last_detect_state = det_state
+                        last_detect_frame_idx = det_idx
+                except RuntimeError as exc:
+                    msg = str(exc).lower()
+                    if "interpreter shutdown" in msg or "cannot schedule new futures after shutdown" in msg:
+                        logging.getLogger(__name__).info("Playback: stopping detection loop due shutdown")
+                        break
+                    logging.getLogger(__name__).warning(
+                        "Playback: runtime detection failure at frame=%s cam_id=%s",
+                        frame_idx,
+                        self._camera_id,
+                        exc_info=True,
+                    )
+                except Exception:
+                    logging.getLogger(__name__).warning(
+                        "Playback: detection failure at frame=%s cam_id=%s",
+                        frame_idx,
+                        self._camera_id,
+                        exc_info=True,
+                    )
+                pending_future = None
+
+            should_schedule = (
+                self._detection_enabled
+                and pending_future is None
+                and self._running
+                and not self.isInterruptionRequested()
+                and (frame_idx % infer_stride == 0 or last_detect_frame_idx < 0)
+            )
+            if should_schedule:
+                try:
+                    pending_future = infer_executor.submit(_evaluate_frame, frame.copy(), w, h, frame_idx)
+                except RuntimeError as exc:
+                    msg = str(exc).lower()
+                    if "interpreter shutdown" in msg or "cannot schedule new futures after shutdown" in msg:
+                        logging.getLogger(__name__).info("Playback: infer submit skipped due shutdown")
+                        break
+                    logging.getLogger(__name__).warning("Playback: infer submit failed", exc_info=True)
+
+            if (not self._detection_enabled) and pending_future is not None:
+                if not pending_future.done():
+                    pending_future.cancel()
+                pending_future = None
+
+            primary_state = dict(last_detect_state) if self._detection_enabled else {"triggered_rules": []}
             primary_state["frame_index"] = frame_idx
 
             if _clip_cooldown > 0:
@@ -154,6 +214,9 @@ class PlaybackThread(QThread):
             sleep_time = frame_delay - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
+        if pending_future is not None and not pending_future.done():
+            pending_future.cancel()
+        infer_executor.shutdown(wait=False)
         if self._cap:
             self._cap.release()
 
@@ -202,7 +265,8 @@ class PlaybackThread(QThread):
 
     def stop(self):
         self._running = False
-        self.wait(3000)
+        self._paused = False
+        self.requestInterruption()
 
     def pause(self):
         self._paused = True
