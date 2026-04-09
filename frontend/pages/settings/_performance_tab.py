@@ -112,7 +112,7 @@ class PerformanceTab(QWidget):
 
         self._detection_interval = QSpinBox()
         self._detection_interval.setRange(1, 30)
-        self._detection_interval.setValue(3)
+        self._detection_interval.setValue(1)
         self._detection_interval.setSuffix(" frames")
         self._detection_interval.setFixedHeight(_FIELD_H)
         bl.addWidget(
@@ -120,8 +120,8 @@ class PerformanceTab(QWidget):
                 "Detection interval",
                 self._detection_interval,
                 hint="Run inference every N display frames. "
-                "1 = max accuracy / slowest.  3 = ~10 inferences/s at 30 fps (recommended for CPU).  "
-                "1–2 with a GPU.",
+                "1 = lowest latency and tightest live tracking. "
+                "Higher values reduce compute load but increase visible bbox lag.",
             )
         )
 
@@ -262,7 +262,7 @@ class PerformanceTab(QWidget):
         self._gpu_toggle.setChecked(db.get_bool("gpu_enabled", False))
         self._max_threads.setValue(int(db.get_int("max_threads", 4) or 4))
         self._frame_skip.setValue(int(db.get_int("frame_skip", 0) or 0))
-        self._detection_interval.setValue(int(db.get_int("detection_interval", 3) or 3))
+        self._detection_interval.setValue(int(db.get_int("detection_interval", 1) or 1))
         self._limit_resources.setChecked(db.get_bool("limit_resources", False))
         max_res = db.get_setting("max_resolution", "Original")
         idx = self._max_resolution.findText(max_res)

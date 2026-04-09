@@ -18,7 +18,12 @@ class CameraManager:
         cam = db.get_camera(camera_id)
         if not cam or not cam.get("enabled"):
             return
-        infer_interval = db.get_int("detection_interval", 3) or 3
+        infer_interval = max(1, int(db.get_int("detection_interval", 1) or 1))
+        try:
+            if db.get_bool("live_bbox_tracking", True):
+                infer_interval = 1
+        except Exception:
+            infer_interval = 1
         thread = CameraThread(
             camera_id=cam["id"],
             source=cam["source"],

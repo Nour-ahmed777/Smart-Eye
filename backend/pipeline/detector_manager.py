@@ -1,9 +1,10 @@
 import contextlib
 import logging
 import os
+import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import cv2
 
@@ -98,6 +99,91 @@ def _smooth_bbox(prev, curr, alpha=0.6):
         return curr
 
 
+def _as_float(value, default=0.0):
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _bbox_center(box):
+    return ((box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0)
+
+
+def _bbox_size(box):
+    return max(1.0, float(box[2] - box[0]), float(box[3] - box[1]))
+
+
+def _shift_bbox(box, dx, dy):
+    return [float(box[0]) + dx, float(box[1]) + dy, float(box[2]) + dx, float(box[3]) + dy]
+
+
+def _match_score(prev_box, curr_box, vx=0.0, vy=0.0):
+    if not prev_box or not curr_box:
+        return -1.0, 0.0, 999.0
+
+    predicted = _shift_bbox(prev_box, _as_float(vx), _as_float(vy))
+    iou_raw = _iou(prev_box, curr_box)
+    iou_pred = _iou(predicted, curr_box)
+    iou_best = max(iou_raw, iou_pred)
+
+    pcx, pcy = _bbox_center(predicted)
+    ccx, ccy = _bbox_center(curr_box)
+    rel_dist = ((pcx - ccx) ** 2 + (pcy - ccy) ** 2) ** 0.5 / _bbox_size(curr_box)
+
+    score = (iou_best * 1.15) - (rel_dist * 0.12)
+    return score, iou_best, rel_dist
+
+
+def _adaptive_smoothing_alpha(rel_move, match_iou):
+    rel = _as_float(rel_move)
+    iou = _as_float(match_iou)
+
+    if rel >= 1.10:
+        return 0.96
+    if rel >= 0.75:
+        return 0.93
+    if rel >= 0.45:
+        return 0.88
+    if rel >= 0.25:
+        return 0.82
+
+    if iou < 0.25:
+        return 0.90
+    if iou < 0.45:
+        return 0.84
+    return 0.76
+
+
+def _pick_best_prev(candidates, curr_box, allow_entry=None, min_iou=0.10, max_rel_dist=3.0):
+    best = None
+    best_score = -1e9
+    best_iou = 0.0
+    best_rel = 999.0
+
+    for _idx, entry in candidates:
+        if allow_entry and not allow_entry(entry):
+            continue
+        pb = entry.get("bbox")
+        if not pb:
+            continue
+
+        score, iou, rel = _match_score(pb, curr_box, entry.get("vx", 0.0), entry.get("vy", 0.0))
+        if score > best_score:
+            best = entry
+            best_score = score
+            best_iou = iou
+            best_rel = rel
+
+    if best is None:
+        return None, 0.0, 999.0
+
+    if best_iou < min_iou and best_rel > max_rel_dist:
+        return None, best_iou, best_rel
+
+    return best, best_iou, best_rel
+
+
 class DetectorManager:
     def __init__(self):
         self._face_model = None
@@ -143,18 +229,38 @@ class DetectorManager:
         with self._executor_lock:
             self._executor = ThreadPoolExecutor(max_workers=self._executor_workers, thread_name_prefix="det-worker")
 
+    @staticmethod
+    def _make_failed_future(exc: Exception):
+        fut = Future()
+        fut.set_exception(exc)
+        return fut
+
     def _submit_executor_task(self, fn, *args):
+        if sys.is_finalizing():
+            return self._make_failed_future(RuntimeError("interpreter shutdown"))
+
         with self._executor_lock:
             executor = self._executor
         try:
             return executor.submit(fn, *args)
         except RuntimeError as exc:
-            if "cannot schedule new futures after shutdown" not in str(exc):
+            msg = str(exc).lower()
+            if sys.is_finalizing() or "interpreter shutdown" in msg:
+                logger.info("Skipping detector executor task submit during interpreter shutdown")
+                return self._make_failed_future(exc)
+            if "cannot schedule new futures after shutdown" not in msg:
                 raise
             logger.warning("Detector executor was shut down unexpectedly; recreating it", exc_info=True)
-            self._recreate_executor()
-            with self._executor_lock:
-                return self._executor.submit(fn, *args)
+            try:
+                self._recreate_executor()
+                with self._executor_lock:
+                    return self._executor.submit(fn, *args)
+            except RuntimeError as exc2:
+                msg2 = str(exc2).lower()
+                if "cannot schedule new futures after shutdown" in msg2 or "interpreter shutdown" in msg2:
+                    logger.info("Skipping detector executor task submit while executor is shutting down")
+                    return self._make_failed_future(exc2)
+                raise
 
     class _CameraState:
         def __init__(self):
@@ -460,26 +566,52 @@ class DetectorManager:
                 logger.warning("Inference future failed for key %s: %s", key, e, exc_info=True)
         return faces, objects, face_ms, obj_ms
 
-    def _identify_faces(self, camera_id, faces, existing_trackers, aggressive_mode, max_identify, small):
+    def _identify_faces(self, camera_id, faces, existing_trackers, aggressive_mode, max_identify, small, frame_idx):
         identifies_used = 0
+        identify_cooldown = max(1, int(self._identify_cooldown or 1))
         for f in faces:
             if f.get("identity"):
                 continue
 
-            best, best_iou = None, 0
+            best, best_iou, best_rel, best_score = None, 0.0, 999.0, -1e9
             for ent in existing_trackers:
-                iou = _iou(ent.get("bbox"), f.get("bbox")) if ent.get("bbox") and f.get("bbox") else 0
-                if iou > best_iou:
-                    best_iou, best = iou, ent
+                eb = ent.get("bbox")
+                fb = f.get("bbox")
+                if not eb or not fb:
+                    continue
+                score, iou, rel = _match_score(eb, fb, ent.get("vx", 0.0), ent.get("vy", 0.0))
+                if score > best_score:
+                    best, best_iou, best_rel, best_score = ent, iou, rel, score
 
-            if best and best_iou > 0.5 and best.get("identity"):
+            if best and best.get("identity") and (best_iou >= 0.28 or best_rel <= 1.10):
                 f["identity"] = best.get("identity")
                 f["confidence"] = best.get("confidence")
-                f["embedding"] = f.get("embedding") or best.get("embedding")
+                curr_embedding = f.get("embedding")
+                if curr_embedding is None:
+                    curr_embedding = best.get("embedding")
+                f["embedding"] = curr_embedding
                 f["liveness"] = best.get("liveness", 1.0)
                 f["gender"] = f.get("gender") or best.get("gender", "unknown")
                 f["gender_confidence"] = max(float(f.get("gender_confidence", 0.0)), float(best.get("gender_confidence", 0.0)))
-                continue
+
+                try:
+                    last_identify_frame = int(best.get("last_identify_frame", -1) or -1)
+                except Exception:
+                    last_identify_frame = -1
+                f["last_identify_frame"] = last_identify_frame
+
+                should_refresh = (
+                    self._face_model
+                    and self._face_model.is_loaded
+                    and f.get("embedding") is not None
+                    and (frame_idx - last_identify_frame) >= identify_cooldown
+                )
+
+                if not should_refresh:
+                    continue
+
+                if aggressive_mode and identifies_used >= max_identify:
+                    continue
 
             if aggressive_mode and identifies_used >= max_identify:
                 continue
@@ -499,6 +631,7 @@ class DetectorManager:
                             if row and row.get("liveness_required"):
                                 liveness_required = True
                         f["liveness"] = self._face_model.check_liveness(small, {"bbox": f.get("bbox")}) if liveness_required else 1.0
+                    f["last_identify_frame"] = frame_idx
                     identifies_used += 1
                 except Exception:
                     logger.debug("Identify failed for face in camera %s", camera_id, exc_info=True)
@@ -531,25 +664,17 @@ class DetectorManager:
             self._camera_settings_cache[camera_id] = (now, cam)
         return cam
 
-    def _rebuild_trackers(self, camera_id, frame, faces, objects, max_trackers):
+    def _rebuild_trackers(self, camera_id, faces, objects, max_trackers):
         state = self._get_camera_state(camera_id)
+        now_ts = time.time()
         entries = []
         for f in faces[:max_trackers]:
             bbox = f.get("bbox")
             if not bbox:
                 continue
             x1, y1, x2, y2 = bbox
-            tr = self._make_tracker()
-            if tr is None:
-                continue
-            try:
-                tr.init(frame, (int(x1), int(y1), int(x2 - x1), int(y2 - y1)))
-            except Exception:
-                logger.debug("Tracker init failed for face in camera %s", camera_id, exc_info=True)
-                continue
             entries.append(
                 {
-                    "tracker": tr,
                     "type": "face",
                     "bbox": [x1, y1, x2, y2],
                     "identity": f.get("identity"),
@@ -559,7 +684,10 @@ class DetectorManager:
                     "liveness": f.get("liveness", 1.0),
                     "gender": f.get("gender", "unknown"),
                     "gender_confidence": f.get("gender_confidence", 0.0),
-                    "last_seen": time.time(),
+                    "last_identify_frame": f.get("last_identify_frame", -1),
+                    "vx": _as_float(f.get("track_vx", 0.0)),
+                    "vy": _as_float(f.get("track_vy", 0.0)),
+                    "last_seen": now_ts,
                 }
             )
 
@@ -568,24 +696,17 @@ class DetectorManager:
             if not bbox:
                 continue
             x1, y1, x2, y2 = bbox
-            tr = self._make_tracker()
-            if tr is None:
-                continue
-            try:
-                tr.init(frame, (int(x1), int(y1), int(x2 - x1), int(y2 - y1)))
-            except Exception:
-                logger.debug("Tracker init failed for object in camera %s", camera_id, exc_info=True)
-                continue
             entries.append(
                 {
-                    "tracker": tr,
                     "type": "object",
                     "bbox": [x1, y1, x2, y2],
                     "plugin_id": o.get("plugin_id"),
                     "plugin_name": o.get("plugin_name"),
                     "class": o.get("class"),
                     "det_score": o.get("det_score"),
-                    "last_seen": time.time(),
+                    "vx": _as_float(o.get("track_vx", 0.0)),
+                    "vy": _as_float(o.get("track_vy", 0.0)),
+                    "last_seen": now_ts,
                 }
             )
 
@@ -680,56 +801,48 @@ class DetectorManager:
                     ident = f["identity"].get("id")
 
                 matched = None
+                best_iou = 0.0
                 if ident:
                     for p in prev["faces"]:
-                        if p.get("id") == ident:
+                        if p.get("id") == ident and p.get("bbox"):
                             matched = p
+                            _score, best_iou, _ = _match_score(
+                                p.get("bbox"),
+                                curr_box,
+                                p.get("vx", 0.0),
+                                p.get("vy", 0.0),
+                            )
                             break
 
                 if not matched:
                     candidates = self._nearby_candidates(face_grid, face_bucket, curr_box)
-                    best_iou = 0
-                    for _idx, p in candidates:
-                        pb = p.get("bbox")
-                        if not pb:
-                            continue
-                        i = _iou(pb, curr_box)
-                        if i > best_iou:
-                            best_iou, matched = i, p if i > 0.3 else None
-
-                if not matched:
-                    candidates = self._nearby_candidates(face_grid, face_bucket, curr_box)
-                    best_dist = None
-                    for _idx, p in candidates:
-                        pb = p.get("bbox")
-                        if not pb:
-                            continue
-                        cx1 = (pb[0] + pb[2]) / 2.0
-                        cy1 = (pb[1] + pb[3]) / 2.0
-                        cx2 = (curr_box[0] + curr_box[2]) / 2.0
-                        cy2 = (curr_box[1] + curr_box[3]) / 2.0
-                        dist = ((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2) ** 0.5
-                        norm = max(1.0, curr_box[2] - curr_box[0], curr_box[3] - curr_box[1])
-                        rel = dist / norm
-                        if best_dist is None or rel < best_dist:
-                            best_dist, matched = rel, p if rel < 3.0 else None
+                    matched, best_iou, _ = _pick_best_prev(
+                        candidates,
+                        curr_box,
+                        min_iou=0.08,
+                        max_rel_dist=3.2,
+                    )
 
                 vx = vy = 0.0
                 if matched and matched.get("bbox"):
                     pb = matched["bbox"]
-                    cx_prev = (pb[0] + pb[2]) / 2.0
-                    cy_prev = (pb[1] + pb[3]) / 2.0
-                    cx_curr = (curr_box[0] + curr_box[2]) / 2.0
-                    cy_curr = (curr_box[1] + curr_box[3]) / 2.0
+                    cx_prev, cy_prev = _bbox_center(pb)
+                    cx_curr, cy_curr = _bbox_center(curr_box)
                     move_dist = ((cx_prev - cx_curr) ** 2 + (cy_prev - cy_curr) ** 2) ** 0.5
-                    box_sz = max(1.0, curr_box[2] - curr_box[0], curr_box[3] - curr_box[1])
-                    rel_move = move_dist / box_sz
-                    alpha = 0.25 if rel_move > 0.7 else 0.35 if rel_move > 0.4 else 0.5 if rel_move > 0.2 else 0.7
+                    rel_move = move_dist / _bbox_size(curr_box)
+                    alpha = _adaptive_smoothing_alpha(rel_move, best_iou)
                     f["bbox"] = _smooth_bbox(pb, curr_box, alpha=alpha)
-                    sb = f["bbox"]
-                    vx = (sb[0] + sb[2]) / 2.0 - cx_prev
-                    vy = (sb[1] + sb[3]) / 2.0 - cy_prev
+                    sbx, sby = _bbox_center(f["bbox"])
+                    inst_vx = sbx - cx_prev
+                    inst_vy = sby - cy_prev
+                    prev_vx = _as_float(matched.get("vx", 0.0))
+                    prev_vy = _as_float(matched.get("vy", 0.0))
+                    vx = (0.55 * prev_vx) + (0.45 * inst_vx)
+                    vy = (0.55 * prev_vy) + (0.45 * inst_vy)
                     matched_face_prev.add(id(matched))
+
+                f["track_vx"] = vx
+                f["track_vy"] = vy
 
                 new_face_state.append(
                     {
@@ -813,49 +926,36 @@ class DetectorManager:
                     continue
                 plugin = o.get("plugin_id")
                 cls = o.get("class") or o.get("label") or o.get("class_name")
-                matched, best_iou = None, 0
                 candidates = self._nearby_candidates(obj_grid, obj_bucket, curr_box)
-                for _idx, p in candidates:
-                    if p.get("plugin") != plugin:
-                        continue
-                    if p.get("class") is not None and cls is not None and p.get("class") != cls:
-                        continue
-                    pb = p.get("bbox")
-                    if not pb:
-                        continue
-                    i = _iou(pb, curr_box)
-                    if i > best_iou:
-                        best_iou, matched = i, p
-
-                if (not matched or best_iou <= 0.3) and candidates:
-                    best_dist = None
-                    for _idx, p in candidates:
-                        if p.get("plugin") != plugin:
-                            continue
-                        if p.get("class") is not None and cls is not None and p.get("class") != cls:
-                            continue
-                        pb = p.get("bbox")
-                        if not pb:
-                            continue
-                        cx1 = (pb[0] + pb[2]) / 2.0
-                        cy1 = (pb[1] + pb[3]) / 2.0
-                        cx2 = (curr_box[0] + curr_box[2]) / 2.0
-                        cy2 = (curr_box[1] + curr_box[3]) / 2.0
-                        dist = ((cx1 - cx2) ** 2 + (cy1 - cy2) ** 2) ** 0.5
-                        norm = max(1.0, curr_box[2] - curr_box[0], curr_box[3] - curr_box[1])
-                        rel = dist / norm
-                        if best_dist is None or rel < best_dist:
-                            best_dist, matched = rel, p if rel < 3.0 else None
+                matched, best_iou, _ = _pick_best_prev(
+                    candidates,
+                    curr_box,
+                    allow_entry=lambda p: p.get("plugin") == plugin
+                    and not (p.get("class") is not None and cls is not None and p.get("class") != cls),
+                    min_iou=0.10,
+                    max_rel_dist=3.0,
+                )
 
                 vx = vy = 0.0
                 if matched and matched.get("bbox"):
                     sb_prev = matched["bbox"]
-                    alpha = 0.6 if best_iou > 0.0 else 0.4
+                    cx_prev, cy_prev = _bbox_center(sb_prev)
+                    cx_curr, cy_curr = _bbox_center(curr_box)
+                    move_dist = ((cx_prev - cx_curr) ** 2 + (cy_prev - cy_curr) ** 2) ** 0.5
+                    rel_move = move_dist / _bbox_size(curr_box)
+                    alpha = _adaptive_smoothing_alpha(rel_move, best_iou)
                     o["bbox"] = _smooth_bbox(sb_prev, curr_box, alpha=alpha)
-                    sb = o["bbox"]
-                    vx = (sb[0] + sb[2]) / 2.0 - (sb_prev[0] + sb_prev[2]) / 2.0
-                    vy = (sb[1] + sb[3]) / 2.0 - (sb_prev[1] + sb_prev[3]) / 2.0
+                    sbx, sby = _bbox_center(o["bbox"])
+                    inst_vx = sbx - cx_prev
+                    inst_vy = sby - cy_prev
+                    prev_vx = _as_float(matched.get("vx", 0.0))
+                    prev_vy = _as_float(matched.get("vy", 0.0))
+                    vx = (0.50 * prev_vx) + (0.50 * inst_vx)
+                    vy = (0.50 * prev_vy) + (0.50 * inst_vy)
                     matched_obj_prev.add(id(matched))
+
+                o["track_vx"] = vx
+                o["track_vy"] = vy
 
                 new_obj_state.append(
                     {
@@ -930,6 +1030,8 @@ class DetectorManager:
                     "embedding": None,
                     "gender": g.get("_gender", "unknown"),
                     "gender_confidence": g.get("_gender_conf", 0.0),
+                    "track_vx": _as_float(g.get("vx", 0.0)),
+                    "track_vy": _as_float(g.get("vy", 0.0)),
                     "ghost": True,
                 }
                 for g in ghost_store["faces"]
@@ -943,6 +1045,8 @@ class DetectorManager:
                     "plugin_id": g.get("plugin"),
                     "plugin_name": g.get("_plugin_name"),
                     "det_score": g.get("_det_score", 0.0),
+                    "track_vx": _as_float(g.get("vx", 0.0)),
+                    "track_vy": _as_float(g.get("vy", 0.0)),
                     "ghost": True,
                 }
                 for g in ghost_store["objects"]
@@ -971,10 +1075,10 @@ class DetectorManager:
 
         objects = self._filter_allowed_objects(objects)
         if faces:
-            self._identify_faces_for_frame(camera_id, faces, aggressive_mode, max_identify, small)
+            self._identify_faces_for_frame(camera_id, faces, aggressive_mode, max_identify, small, frame_idx)
 
         if faces or objects:
-            self._rebuild_trackers(camera_id, frame, faces, objects, max_trackers)
+            self._rebuild_trackers(camera_id, faces, objects, max_trackers)
 
         ghost_faces, ghost_objects = self._apply_smoothing(camera_id, faces, objects)
 
@@ -992,11 +1096,11 @@ class DetectorManager:
             allowed_pids = set(self._plugin_models.keys())
         return [o for o in objects if o.get("plugin_id") in allowed_pids]
 
-    def _identify_faces_for_frame(self, camera_id, faces, aggressive_mode, max_identify, small):
+    def _identify_faces_for_frame(self, camera_id, faces, aggressive_mode, max_identify, small, frame_idx):
         state = self._get_camera_state(camera_id)
         with state.trackers_lock:
             existing_trackers = list(state.trackers)
-        self._identify_faces(camera_id, faces, existing_trackers, aggressive_mode, max_identify, small)
+        self._identify_faces(camera_id, faces, existing_trackers, aggressive_mode, max_identify, small, frame_idx)
 
     def _is_face_enabled(self, camera_id):
         try:

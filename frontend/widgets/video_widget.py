@@ -71,10 +71,14 @@ class VideoWidget(QLabel):
         self._frame_w, self._frame_h = w, h
         qimg = QImage(rgb.data, w, h, ch * w, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(qimg)
+
+        viewport_px = max(1, self.width() * self.height())
+        frame_px = max(1, w * h)
+        use_fast = frame_px > viewport_px * 1.5 or frame_px >= 1280 * 720
         scaled = pixmap.scaled(
             self.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
+            Qt.TransformationMode.FastTransformation if use_fast else Qt.TransformationMode.SmoothTransformation,
         )
         if self._show_overlays and self._state:
             scaled = self._draw_overlays(scaled, w, h)
@@ -89,7 +93,8 @@ class VideoWidget(QLabel):
     def _draw_overlays(self, pixmap: QPixmap, frame_w: int, frame_h: int) -> QPixmap:
         px_w, px_h = pixmap.width(), pixmap.height()
         painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        hi_quality = (px_w * px_h) <= (960 * 540)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, hi_quality)
 
         label_font = QFont("Segoe UI", 9, QFont.Weight.Bold)
         painter.setFont(label_font)
@@ -121,10 +126,10 @@ class VideoWidget(QLabel):
             liveness = face.get("liveness") or 0.0
             if identity:
                 color = _SUCCESS if liveness >= 0.5 else _WARNING_ORANGE
-                label = f"{identity} ({gender}) {conf:.0%}"
+                label = f"{identity} ({gender}) {conf:.1%}"
             else:
                 color = _DANGER_DIM
-                label = f"Unknown ({gender}) {conf:.0%}" if conf > 0.1 else f"Face ({gender})"
+                label = f"Unknown ({gender}) {conf:.1%}" if conf > 0.1 else f"Face ({gender})"
             draw_box(face["bbox"], color, label)
 
         if not self._state.get("all_faces") and self._state.get("face_bbox"):
@@ -132,13 +137,13 @@ class VideoWidget(QLabel):
             gender = (self._state.get("gender") or "unknown").title()
             conf = self._state.get("face_confidence", 0.0)
             color = _SUCCESS if identity and identity != "Unknown" else _DANGER_DIM
-            draw_box(self._state["face_bbox"], color, f"{identity or 'Unknown'} ({gender}) {conf:.0%}")
+            draw_box(self._state["face_bbox"], color, f"{identity or 'Unknown'} ({gender}) {conf:.1%}")
 
         for obj in self._state.get("object_bboxes", []):
             cls = obj.get("class_name", obj.get("plugin_name", "?"))
             conf = obj.get("confidence", 0.0)
             color = obj.get("bbox_color") or _class_color(cls)
-            draw_box(obj["bbox"], color, f"{cls} {conf:.0%}")
+            draw_box(obj["bbox"], color, f"{cls} {conf:.1%}")
 
         if self._camera_name:
             painter.setFont(QFont("Segoe UI", 8))
