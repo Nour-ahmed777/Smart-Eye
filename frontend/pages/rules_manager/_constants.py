@@ -26,9 +26,7 @@ from frontend.styles._colors import (
     _ACCENT_MID_HOVER,
     _ACCENT_BG_12,
     _ACCENT_HI_BG_03,
-    _ACCENT_HI_BG_28,
     _ACCENT_HI_BG_45,
-    _ACCENT_HI_BG_55,
     _ACCENT_HI_BG_70,
     _WARNING,
     _WARNING_DIM,
@@ -104,19 +102,33 @@ QPushButton[class="secondary"]:hover {{ background-color: {_BG_OVERLAY}; color: 
 {_FORM_INPUTS}
 {_FORM_COMBO}
 QScrollArea {{ border: none; background-color: transparent; }}
-QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_6}px; margin: {SPACE_XXS}px {SPACE_XS}px; }}
+QScrollBar:vertical {{
+    border: none;
+    background: {_BORDER_DIM};
+    width: {SPACE_6}px;
+    margin: {SPACE_XXS}px {SPACE_XS}px;
+    border-radius: {RADIUS_XS}px;
+}}
 QScrollBar::handle:vertical {{
-    background: {_ACCENT_HI_BG_28};
+    background: {_ACCENT_HI};
     min-height: {SPACE_28}px; border-radius: {RADIUS_XS}px;
 }}
-QScrollBar::handle:vertical:hover {{ background: {_ACCENT_HI_BG_55}; }}
+QScrollBar::handle:vertical:hover {{ background: {_TEXT_PRI}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-QScrollBar:horizontal {{ border: none; background: transparent; height: {SPACE_6}px; margin: {SPACE_XXS}px {SPACE_XXS}px; }}
-QScrollBar::handle:horizontal {{
-    background: {_ACCENT_HI_BG_28}; min-width: {SPACE_28}px; border-radius: {RADIUS_XS}px;
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+QScrollBar:horizontal {{
+    border: none;
+    background: {_BORDER_DIM};
+    height: {SPACE_6}px;
+    margin: {SPACE_XXS}px {SPACE_XXS}px;
+    border-radius: {RADIUS_XS}px;
 }}
-QScrollBar::handle:horizontal:hover {{ background: {_ACCENT_HI_BG_55}; }}
+QScrollBar::handle:horizontal {{
+    background: {_ACCENT_HI}; min-width: {SPACE_28}px; border-radius: {RADIUS_XS}px;
+}}
+QScrollBar::handle:horizontal:hover {{ background: {_TEXT_PRI}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: transparent; }}
 QCheckBox {{ color: {_TEXT_PRI}; spacing: {SPACE_SM}px; }}
 QCheckBox::indicator {{
     width: {SPACE_LG}px; height: {SPACE_LG}px;

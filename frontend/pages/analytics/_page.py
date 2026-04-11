@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from backend.analytics import report_generator, stats_engine
-from backend.analytics.heatmap_generator import get_generator
+from backend.analytics.heatmap_generator import generate_heatmap_from_db, get_generator
 from backend.repository import db
 from frontend.app_theme import page_base_styles, safe_set_point_size
 from frontend.icon_theme import themed_icon_pixmap
@@ -532,9 +532,18 @@ class AnalyticsPage(QWidget):
         if camera_id is None:
             self._heatmap_widget.set_placeholder("Select a camera to view heatmap")
         else:
-            heatmap = get_generator(camera_id).generate()
+            gen = get_generator(camera_id)
+            heatmap = gen.generate() if gen.has_data() else None
+            if heatmap is None:
+                heatmap = generate_heatmap_from_db(
+                    camera_id=camera_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
             if heatmap is not None:
                 self._heatmap_widget.set_heatmap(heatmap)
+            else:
+                self._heatmap_widget.set_placeholder("No heatmap data in selected range")
         while self._tv_layout.count():
             item = self._tv_layout.takeAt(0)
             if item.widget():

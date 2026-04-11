@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import Qt, QSettings
 from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -19,7 +22,7 @@ from frontend.icon_theme import themed_icon_pixmap
 from frontend.styles._btn_styles import _SEGMENT_TAB_BAR, _SEGMENT_TAB_BTN
 from frontend.styles._input_styles import _SEARCH_INPUT
 from frontend.styles._colors import _MUTED_BG_25
-from frontend.styles.page_styles import header_bar_style, splitter_handle_style, toolbar_style
+from frontend.styles.page_styles import header_bar_style, saved_clips_scrollbar_style, splitter_handle_style, toolbar_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_9,
@@ -58,6 +61,39 @@ from ._constants import (
     _TEXT_PRI,
 )
 from ._detail_panel import DetailPanel
+
+
+_SHARED_MANAGER_LAYOUT_APP = "ManagerLayout"
+_SHARED_SPLITTER_LEFT_KEY = "splitter/left_width"
+_DEFAULT_SPLITTER_LEFT = 340
+_DEFAULT_SPLITTER_RIGHT = 660
+
+
+def _coerce_left_width(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(value, (list, tuple)) and value:
+        try:
+            return int(value[0])
+        except (ValueError, TypeError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith("@"):
+        return None
+    match = re.search(r"-?\d+", text)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except (ValueError, TypeError):
+        return None
 
 
 def build_page_ui(page) -> None:
@@ -189,14 +225,15 @@ def build_page_ui(page) -> None:
     page._roster_scroll = QScrollArea()
     page._roster_scroll.setWidgetResizable(True)
     page._roster_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    page._roster_scroll.setStyleSheet(f"border: none; background: {_BG_BASE};")
+    page._roster_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    page._roster_scroll.setStyleSheet(saved_clips_scrollbar_style(scroll_area_bg=_BG_BASE))
 
     page._roster_container = QWidget()
     page._roster_container.setStyleSheet(f"background: {_BG_BASE};")
     page._roster_vbox = QVBoxLayout(page._roster_container)
     page._roster_vbox.setContentsMargins(SPACE_SM, SPACE_SM, SPACE_SM, SPACE_SM)
     page._roster_vbox.setSpacing(SPACE_6)
-    page._roster_vbox.setAlignment(Qt.AlignmentFlag.AlignTop)
+    page._roster_vbox.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
 
     page._roster_scroll.setWidget(page._roster_container)
     ll.addWidget(page._roster_scroll, stretch=1)
@@ -218,18 +255,25 @@ def build_page_ui(page) -> None:
     page._splitter.setStretchFactor(1, 1)
 
     _qs = QSettings("SmartEye", "FaceManager")
+    _shared_qs = QSettings("SmartEye", _SHARED_MANAGER_LAYOUT_APP)
     _saved = _qs.value("splitter/sizes")
-    if _saved and len(_saved) == 2:
-        try:
-            page._splitter.setSizes([int(_saved[0]), int(_saved[1])])
-        except (ValueError, TypeError):
-            page._splitter.setSizes([340, 660])
-    else:
-        page._splitter.setSizes([340, 660])
+
+    left_width = _coerce_left_width(_shared_qs.value(_SHARED_SPLITTER_LEFT_KEY))
+    if left_width is None:
+        left_width = _coerce_left_width(_saved)
+    if left_width is None:
+        left_width = _DEFAULT_SPLITTER_LEFT
+
+    left_width = max(SIZE_PANEL_MIN, min(SIZE_PANEL_MAX, left_width))
+    page._splitter.setSizes([left_width, _DEFAULT_SPLITTER_RIGHT])
+    _shared_qs.setValue(_SHARED_SPLITTER_LEFT_KEY, left_width)
 
     def _save_splitter(pos, index):
         _qs2 = QSettings("SmartEye", "FaceManager")
-        _qs2.setValue("splitter/sizes", page._splitter.sizes())
+        sizes = page._splitter.sizes()
+        _qs2.setValue("splitter/sizes", sizes)
+        if sizes and len(sizes) >= 1:
+            QSettings("SmartEye", _SHARED_MANAGER_LAYOUT_APP).setValue(_SHARED_SPLITTER_LEFT_KEY, int(sizes[0]))
 
     page._splitter.splitterMoved.connect(_save_splitter)
     root.addWidget(page._splitter, stretch=1)

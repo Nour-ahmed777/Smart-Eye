@@ -26,7 +26,6 @@ from frontend.styles._colors import (
 
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.ui_tokens import (
-    FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
     FONT_SIZE_LARGE,
     FONT_SIZE_MICRO,
@@ -37,6 +36,7 @@ from frontend.ui_tokens import (
     SIZE_CONTROL_22,
     SIZE_CONTROL_MID,
     SIZE_CONTROL_XS,
+    SIZE_PANEL_W_MD,
     SIZE_ROW_XL,
     SIZE_ICON_64,
     SPACE_6,
@@ -80,7 +80,7 @@ class RosterRowWidget(QFrame):
         bg_dark, bg_light = _AVATAR_BG_COLORS[color_idx]
 
         apply_roster_card_style(self, "RosterCard", is_active)
-        left_layout, info_col, pills, right = build_roster_card_layout(self)
+        left_layout, info_col, pills, right = build_roster_card_layout(self, pills_slot_width=SIZE_PANEL_W_MD)
 
         avatar = QLabel()
 
@@ -105,17 +105,16 @@ class RosterRowWidget(QFrame):
         left_layout.addWidget(avatar, alignment=Qt.AlignmentFlag.AlignCenter)
         info_col.setSpacing(SPACE_XXS)
 
-        name_lbl = QLabel(_short_display_name(face.get("name", "")))
+        display_name = _short_display_name(face.get("name", ""))
+        name_lbl = QLabel(display_name)
+        name_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        name_lbl.setMinimumWidth(0)
+        name_lbl.setToolTip(display_name)
         name_lbl.setStyleSheet(
             f"font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_BOLD}; "
             f"color: {_TEXT_PRI if is_enabled else _TEXT_MUTED}; background: transparent;"
         )
         info_col.addWidget(name_lbl)
-
-        dept = face.get("department") or ""
-        dept_lbl = QLabel(dept if dept else "All departments")
-        dept_lbl.setStyleSheet(f"font-size: {FONT_SIZE_CAPTION}px; color: {_TEXT_MUTED}; background: transparent;")
-        info_col.addWidget(dept_lbl)
 
         status_pill = QLabel("AUTHORIZED" if is_authorized else "RESTRICTED")
         status_pill.setFixedHeight(SIZE_CONTROL_XS)

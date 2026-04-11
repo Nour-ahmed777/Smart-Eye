@@ -135,7 +135,8 @@ class MainWindow(QMainWindow):
             self._log_page_state("startup")
         self._sidebar.set_access(set(), False)
         if self._auth_required:
-            self._require_login()
+            if not self._try_restore_remembered_session():
+                self._require_login()
         else:
             self._enter_trusted_session()
             if self._current_key:
@@ -457,7 +458,49 @@ class MainWindow(QMainWindow):
             pass
         self._on_login_success(account)
 
-    def _on_login_success(self, account: dict):
+    def _try_restore_remembered_session(self) -> bool:
+        try:
+            if not self._db.get_bool("remember_login", False):
+                return False
+            if self._db.get_bool("bootstrap_password_active", False):
+                return False
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
+            return False
+
+        account = None
+        try:
+            remembered_id = str(self._db.get_setting("remember_account_id", "") or "").strip()
+            if remembered_id:
+                account = self._db.get_account(int(remembered_id))
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
+            account = None
+
+        if not account:
+            try:
+                remembered_email = str(self._db.get_setting("remember_email", "") or "").strip()
+                if remembered_email:
+                    row = self._db.get_account_by_email(remembered_email)
+                    if row:
+                        account = self._db.get_account(int(row["id"]))
+            except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
+                account = None
+
+        if not account:
+            with contextlib.suppress(Exception):
+                self._db.set_setting("remember_login", False)
+                self._db.set_setting("remember_email", "")
+                self._db.set_setting("remember_account_id", "")
+            return False
+
+        try:
+            self._db.touch_last_login(account["id"])
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
+            pass
+
+        self._on_login_success(account, restored_session=True)
+        return True
+
+    def _on_login_success(self, account: dict, restored_session: bool = False):
         self._session_user = account
         if self._db.get_bool("bootstrap_password_active", False):
             QMessageBox.warning(
@@ -492,12 +535,14 @@ class MainWindow(QMainWindow):
             self._navigate(target, allow_unauth=True)
         self._set_auth_error("")
         self._login_card.clear_password()
-        if self._login_card.remember_me():
+        if restored_session or self._login_card.remember_me():
             self._db.set_setting("remember_login", True)
             self._db.set_setting("remember_email", account.get("email", ""))
+            self._db.set_setting("remember_account_id", account.get("id", ""))
         else:
             self._db.set_setting("remember_login", False)
             self._db.set_setting("remember_email", "")
+            self._db.set_setting("remember_account_id", "")
 
     def _on_bootstrap_cleared(self):
         if not self._session_user:

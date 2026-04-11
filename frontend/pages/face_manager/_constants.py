@@ -87,12 +87,19 @@ _STYLESHEET = (
 {_FORM_INPUTS}
 {_FORM_COMBO}
 QScrollArea {{ border: none; background-color: transparent; }}
-QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_SM}px; margin: 0; }}
-QScrollBar::handle:vertical {{
-    background: {_BORDER}; min-height: {SIZE_CONTROL_SM}px; border-radius: {RADIUS_SM}px;
+QScrollBar:vertical {{
+    border: none;
+    background: {_BORDER_DIM};
+    width: {SPACE_SM}px;
+    margin: 0;
+    border-radius: {RADIUS_SM}px;
 }}
-QScrollBar::handle:vertical:hover {{ background: {_TEXT_MUTED}; }}
+QScrollBar::handle:vertical {{
+    background: {_ACCENT_HI}; min-height: {SIZE_CONTROL_SM}px; border-radius: {RADIUS_SM}px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {_TEXT_PRI}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 QCheckBox {{ color: {_TEXT_PRI}; spacing: {SPACE_SM}px; }}
 QCheckBox::indicator {{
     width: {SIZE_ICON_TINY}px; height: {SIZE_ICON_TINY}px;

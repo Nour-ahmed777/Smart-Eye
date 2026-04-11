@@ -72,8 +72,6 @@ class ExperimentalTab(QWidget):
             )
         )
 
-
-
         bl.addWidget(_make_sdiv("Page Preload"))
         for key, label in [
             ("dashboard", "Dashboard"),

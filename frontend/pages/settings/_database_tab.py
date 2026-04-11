@@ -595,6 +595,7 @@ class _PurgeWorker(QThread):
             from backend.database.migrations import apply as _run_migrations
 
             _run_migrations(db.get_conn())
+            db.ensure_default_account()
             self.finished.emit(True, "")
         except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             self.finished.emit(False, str(exc))
@@ -644,7 +645,7 @@ class DatabaseTab(QWidget):
         vl.setSpacing(SPACE_10)
 
         self._tank = _WaterTankWidget()
-        self._tank.setToolTip("Turn the valve to purge all database data")
+        self._tank.setToolTip("Turn the valve to purge operational database data (accounts and settings are preserved)")
         self._tank.faucet_clicked.connect(self._on_faucet_clicked)
         self._tank.drain_complete.connect(self._on_drain_complete)
         vl.addWidget(self._tank, alignment=Qt.AlignmentFlag.AlignHCenter)
@@ -826,7 +827,7 @@ class DatabaseTab(QWidget):
         except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         if success:
-            self._limit_status_label.setText("Database purged successfully.")
+            self._limit_status_label.setText("Database purged successfully (accounts preserved).")
 
     def _reset_db(self) -> None:
         try:

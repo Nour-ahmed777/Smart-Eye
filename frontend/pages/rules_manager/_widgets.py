@@ -71,10 +71,11 @@ from frontend.ui_tokens import (
     SPACE_XS,
     SPACE_XXL,
     SPACE_20,
-    SIZE_PILL_H,
+    SIZE_CONTROL_22,
     SIZE_CONTROL_MID,
     SIZE_ITEM_SM,
     SIZE_PANEL_SM,
+    SIZE_PANEL_W_MD,
     SIZE_BTN_W_62,
     SIZE_BTN_W_58,
     SIZE_BTN_W_82,
@@ -725,30 +726,21 @@ class RuleCard(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         apply_roster_card_style(self, "RuleCard", is_active)
 
-        left_layout, info, pills, right = build_roster_card_layout(self)
+        left_layout, info, pills, right = build_roster_card_layout(self, pills_slot_width=SIZE_PANEL_W_MD)
         left_layout.addWidget(HeatBar(heat_level, enabled))
         info.setSpacing(SPACE_XS)
 
-        name_lbl = QLabel(rule["name"])
+        full_rule_name = str(rule.get("name", ""))
+        name_lbl = QLabel(full_rule_name)
+        name_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        name_lbl.setMinimumWidth(0)
+        name_lbl.setToolTip(full_rule_name)
         name_font = QFont()
         safe_set_point_size(name_font, FONT_SIZE_CAPTION)
         name_font.setBold(True)
         name_lbl.setFont(name_font)
         name_lbl.setStyleSheet(f"color: {_TEXT_PRI if enabled else _TEXT_SEC}; background: transparent;")
         info.addWidget(name_lbl)
-
-        meta_parts = []
-        if rule.get("camera_id"):
-            cam = db.get_camera(rule["camera_id"])
-            if cam:
-                meta_parts.append(cam["name"])
-        if rule.get("zone_id"):
-            meta_parts.append(f"Zone #{rule['zone_id']}")
-        if not meta_parts:
-            meta_parts.append("All cameras")
-        meta_lbl = QLabel(" - ".join(meta_parts))
-        meta_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
-        info.addWidget(meta_lbl)
 
         pills.setSpacing(SPACE_6)
         pills.setAlignment(Qt.AlignmentFlag.AlignVCenter)
@@ -757,7 +749,7 @@ class RuleCard(QFrame):
         if priority:
             pills.addWidget(_pill(f"P{priority}", _TEXT_SEC, _MUTED_BG_10))
 
-        toggle = ToggleSwitch(width=SIZE_CONTROL_MID, height=SIZE_PILL_H)
+        toggle = ToggleSwitch(width=SIZE_CONTROL_MID, height=SIZE_CONTROL_22)
         toggle.setChecked(enabled)
         toggle.toggled.connect(
             lambda v, rid=rule["id"]: (

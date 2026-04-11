@@ -245,7 +245,7 @@ class LogsViewerPage(QWidget):
         self._camera_combo = QComboBox()
         self._camera_combo.addItem("All cameras", None)
         self._camera_combo.setFixedHeight(SIZE_CONTROL_MD)
-        self._camera_combo.setMinimumWidth(SIZE_FIELD_W)
+        self._camera_combo.setFixedWidth(SIZE_FIELD_W_SM)
         self._camera_combo.setStyleSheet(_FORM_COMBO)
         fl1.addWidget(self._camera_combo)
         fl1.addSpacing(SPACE_SM)
@@ -253,7 +253,7 @@ class LogsViewerPage(QWidget):
         self._type_combo = QComboBox()
         self._type_combo.addItems(["All types", "face", "object", "violation"])
         self._type_combo.setFixedHeight(SIZE_CONTROL_MD)
-        self._type_combo.setMinimumWidth(SIZE_FIELD_W_SM)
+        self._type_combo.setFixedWidth(SIZE_FIELD_W_SM)
         self._type_combo.setStyleSheet(_FORM_COMBO)
         fl1.addWidget(self._type_combo)
 

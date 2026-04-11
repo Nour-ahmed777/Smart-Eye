@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QLabel,
@@ -12,27 +12,21 @@ from backend.repository import db
 from frontend.app_theme import safe_set_point_size
 from frontend.widgets.toggle_switch import ToggleSwitch
 from frontend.ui_tokens import (
-    FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
-    RADIUS_MD,
+    SIZE_ICON_34,
     FONT_SIZE_MICRO,
     FONT_WEIGHT_BOLD,
-    SPACE_6,
     SIZE_CONTROL_22,
     SIZE_CONTROL_MID,
+    SIZE_PANEL_W_MD,
     SPACE_3,
 )
 from frontend.styles._colors import (
-    _ACCENT_BG_12,
-    _ACCENT_HI,
-    _PURPLE,
-    _PURPLE_BG_12,
     _TEXT_MUTED,
     _TEXT_PRI,
     _TEXT_SEC,
 )
 
-from ._constants import _pill
 from frontend.widgets.base.roster_card_base import (
     apply_roster_card_style,
     build_roster_card_layout,
@@ -60,33 +54,46 @@ class ProfileCard(QFrame):
         ptype = profile.get("type", "email")
         enabled = bool(profile.get("enabled", 1))
         is_email = ptype == "email"
-        tc = _ACCENT_HI if is_email else _PURPLE
-        td = _ACCENT_BG_12 if is_email else _PURPLE_BG_12
 
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         apply_roster_card_style(self, "ProfileCard", is_active)
-        left_layout, info, pills, right = build_roster_card_layout(self)
+        left_layout, info, pills, right = build_roster_card_layout(self, pills_slot_width=SIZE_PANEL_W_MD)
 
-        badge = _pill("EMAIL" if is_email else "WEBHOOK", tc, td)
-        badge.setStyleSheet(
-            f"color: {tc}; background-color: {td}; border: none;"
-            f" border-radius: {RADIUS_MD}px; padding: 0 {SPACE_6}px; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_BOLD};"
-        )
+        badge = QLabel()
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setStyleSheet("background: transparent; border: none;")
+        icon_path = "frontend/assets/icons/email.png" if is_email else "frontend/assets/icons/webhook.png"
+        badge_icon = QPixmap(icon_path)
+        if not badge_icon.isNull():
+            badge.setPixmap(
+                badge_icon.scaled(
+                    SIZE_ICON_34,
+                    SIZE_ICON_34,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        else:
+            badge.setText("EMAIL" if is_email else "WEBHOOK")
+            badge.setStyleSheet(
+                f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_MICRO}px; "
+                f"font-weight: {FONT_WEIGHT_BOLD}; background: transparent; border: none;"
+            )
 
         info.setSpacing(SPACE_3)
         left_layout.addWidget(badge, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        name_lbl = QLabel(profile.get("name", "Unnamed"))
+        full_name = str(profile.get("name", "Unnamed") or "Unnamed")
+        name_lbl = QLabel(full_name)
+        name_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        name_lbl.setMinimumWidth(0)
+        name_lbl.setToolTip(full_name)
         nf = QFont()
         safe_set_point_size(nf, FONT_SIZE_LABEL)
         nf.setBold(True)
         name_lbl.setFont(nf)
         name_lbl.setStyleSheet(f"color: {_TEXT_PRI if enabled else _TEXT_SEC}; background: transparent;")
         info.addWidget(name_lbl)
-
-        ep_lbl = QLabel(profile.get("endpoint", ""))
-        ep_lbl.setStyleSheet(f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; background: transparent;")
-        info.addWidget(ep_lbl)
 
         toggle = ToggleSwitch(width=SIZE_CONTROL_MID, height=SIZE_CONTROL_22)
         toggle.setChecked(enabled)

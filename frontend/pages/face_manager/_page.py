@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -53,7 +54,6 @@ from frontend.ui_tokens import (
     SIZE_IMAGE_240,
     SIZE_LABEL_W_50,
     SIZE_PANEL_MAX,
-    SIZE_ROW_52,
     SIZE_ROW_72,
     SPACE_10,
     SPACE_14,
@@ -176,6 +176,7 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
 
         if not faces:
             empty_w = QWidget()
+            empty_w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             empty_w.setStyleSheet("background: transparent; border: none;")
             from PySide6.QtWidgets import QVBoxLayout as _VL
 
@@ -183,19 +184,6 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             el.setAlignment(Qt.AlignmentFlag.AlignCenter)
             el.setSpacing(SPACE_10)
             el.setContentsMargins(SPACE_LG, SPACE_XXL, SPACE_LG, SPACE_XXL)
-
-            icon_lbl = QLabel()
-            icon_lbl.setFixedSize(SIZE_ROW_52, SIZE_ROW_52)
-            icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon_lbl.setStyleSheet("background: transparent; border: none;")
-            _icon_pix = QPixmap("frontend/assets/icons/person.png")
-            if not _icon_pix.isNull():
-                icon_lbl.setPixmap(
-                    _icon_pix.scaled(
-                        SIZE_CONTROL_MD, SIZE_CONTROL_MD, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-                    )
-                )
-            el.addWidget(icon_lbl, alignment=Qt.AlignmentFlag.AlignCenter)
 
             has_search = bool(self._search_edit.text().strip())
             title = QLabel("No results" if has_search else "No faces enrolled")
@@ -219,6 +207,9 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             row.enabled_toggled.connect(self._on_face_enabled_toggled)
             self._roster_vbox.addWidget(row)
             self._row_widgets[face["id"]] = row
+
+
+        self._roster_vbox.addStretch(1)
 
     def _on_roster_row_clicked(self, face_id: int):
         self._active_face_id = face_id

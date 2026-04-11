@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
 )
 
+from backend.pipeline.rule_engine import evaluate_rules
 from backend.repository import db
 from frontend.services.debug_service import DebugService
 from frontend.styles._colors import _ACCENT_HI_BG_03, _SUCCESS, _TEXT_PRI
@@ -64,6 +65,29 @@ logger = logging.getLogger(__name__)
 
 _UNITS = ["KB", "MB", "GB"]
 _UNIT_BYTES = {"KB": 1024, "MB": 1024**2, "GB": 1024**3}
+_DUMMY_FRAME_W = 1280
+_DUMMY_FRAME_H = 720
+_DUMMY_IDENTITIES = [
+    ("Alice Chen", "female"),
+    ("Bob Martinez", "male"),
+    ("Carol King", "female"),
+    ("David Lee", "male"),
+    ("Ethan Park", "male"),
+    ("Mia Rivera", "female"),
+]
+_DUMMY_OBJECT_LABELS = [
+    "person",
+    "person",
+    "person",
+    "helmet",
+    "vest",
+    "NO-Hardhat",
+    "NO-Safety Vest",
+    "forklift",
+    "car",
+    "phone",
+    "bag",
+]
 
 
 def _fmt_bytes(n: int) -> str:
@@ -78,16 +102,125 @@ def _fmt_bytes(n: int) -> str:
     return f"{n / 1024**3:.2f} GB"
 
 
+def _rand_bbox(frame_w: int = _DUMMY_FRAME_W, frame_h: int = _DUMMY_FRAME_H, min_frac: float = 0.08, max_frac: float = 0.25):
+    bw = random.randint(int(frame_w * min_frac), int(frame_w * max_frac))
+    bh = random.randint(int(frame_h * min_frac), int(frame_h * max_frac))
+    x1 = random.randint(0, max(1, frame_w - bw - 1))
+    y1 = random.randint(0, max(1, frame_h - bh - 1))
+    return [x1, y1, x1 + bw, y1 + bh]
+
+
+def _build_dummy_detection_payload(camera_name: str, identity: str | None, gender: str):
+    objects = []
+    person_count = 0
+    hardhat_violation = False
+    vest_violation = False
+    obj_total = random.randint(2, 6)
+    for _ in range(obj_total):
+        label = random.choice(_DUMMY_OBJECT_LABELS)
+        if label == "person":
+            person_count += 1
+        if label == "NO-Hardhat":
+            hardhat_violation = True
+        if label == "NO-Safety Vest":
+            vest_violation = True
+        objects.append(
+            {
+                "label": label,
+                "conf": round(random.uniform(0.55, 0.98), 3),
+                "bbox": _rand_bbox(),
+            }
+        )
+
+    if person_count == 0:
+        person_count = 1
+        objects.append(
+            {
+                "label": "person",
+                "conf": round(random.uniform(0.65, 0.99), 3),
+                "bbox": _rand_bbox(),
+            }
+        )
+
+    face_bbox = _rand_bbox(min_frac=0.10, max_frac=0.18)
+    face_conf = round(random.uniform(0.50, 0.99), 3)
+    identity_text = identity or "Unknown"
+
+    payload = {
+        "identity": identity_text,
+        "gender": gender,
+        "age_group": random.choice(["young_adult", "adult", "senior"]),
+        "camera_name": camera_name,
+        "person_count": person_count,
+        "object_count": len(objects),
+        "ppe_violation": bool(hardhat_violation or vest_violation),
+        "NO-Hardhat": hardhat_violation,
+        "NO-Safety Vest": vest_violation,
+        "person": person_count > 0,
+        "objects": objects,
+        "object_bboxes": [{"class": o["label"], "conf": o["conf"], "bbox": o["bbox"]} for o in objects],
+        "all_faces": [
+            {
+                "bbox": face_bbox,
+                "conf": face_conf,
+                "identity": identity_text,
+                "gender": gender,
+            }
+        ],
+        "heatmap_boxes": [o["bbox"] for o in objects] + [face_bbox],
+        "frame_w": _DUMMY_FRAME_W,
+        "frame_h": _DUMMY_FRAME_H,
+    }
+    return payload, face_conf
+
+
+def _alarm_level_from_rules(rule_names: list[str]) -> int:
+    if not rule_names:
+        return 0
+    lower = [str(name or "").lower() for name in rule_names]
+    has_hardhat = any("hardhat violation" in name for name in lower)
+    has_vest = any("vest violation" in name for name in lower)
+    if has_hardhat and has_vest:
+        return 3
+    if has_hardhat or has_vest:
+        return 2
+    if any("crowd threshold exceeded" in name for name in lower):
+        return 2
+    return 1
+
+
+def _evaluate_rules_for_payload(camera_id: int, payload: dict) -> tuple[list[str], int]:
+    state = {
+        "camera_id": camera_id,
+        "detections": {
+            "identity": payload.get("identity"),
+            "gender": payload.get("gender"),
+            "person_count": payload.get("person_count", 0),
+            "ppe_violation": payload.get("ppe_violation", False),
+            "NO-Hardhat": payload.get("NO-Hardhat", False),
+            "NO-Safety Vest": payload.get("NO-Safety Vest", False),
+        },
+        "object_bboxes": payload.get("object_bboxes") or [],
+    }
+    try:
+        triggered = evaluate_rules(state, camera_id=camera_id) or []
+    except Exception:
+        triggered = []
+    names = [str(r.get("name")) for r in triggered if isinstance(r, dict) and r.get("name")]
+    return names, _alarm_level_from_rules(names)
+
+
 class _FloodWorker(QThread):
     progress = Signal(int)
     finished = Signal(int, int)
     error = Signal(str)
 
-    def __init__(self, db_path: str, target_bytes: int, cam_ids: list[int], parent=None) -> None:
+    def __init__(self, db_path: str, target_bytes: int, cam_rows: list[dict], debug_service: DebugService, parent=None) -> None:
         super().__init__(parent)
         self._db_path = db_path
         self._target = target_bytes
-        self._cam_ids = cam_ids
+        self._cam_rows = cam_rows
+        self._debug_service = debug_service
         self._cancelled = False
 
     def cancel(self) -> None:
@@ -102,9 +235,10 @@ class _FloodWorker(QThread):
             conn.execute("PRAGMA synchronous=NORMAL")
 
             now = datetime.datetime.now()
-            ids = self._cam_ids
-            _idents = ["Alice Chen", "Bob Martinez", "Carol King", "David Lee", "Unknown", None]
-            _alarms = [0, 0, 0, 0, 1, 2]
+            cameras = self._cam_rows or [{"id": 0, "name": "Debug Dummy Camera"}]
+            self._debug_service.ensure_debug_rules(conn, cameras)
+            self._debug_service.ensure_debug_faces(conn, count=len(_DUMMY_IDENTITIES))
+            self._debug_service.ensure_debug_notification_profiles(conn)
 
             DET_SQL = (
                 "INSERT INTO detection_logs"
@@ -116,20 +250,26 @@ class _FloodWorker(QThread):
             def _det():
                 off = random.randint(0, 90 * 86400)
                 ts = now - datetime.timedelta(seconds=off)
+                cam = random.choice(cameras)
+                camera_id = int(cam.get("id", 0) or 0)
+                camera_name = str(cam.get("name") or f"Camera {camera_id}")
+                if random.random() < 0.22:
+                    identity = None
+                    gender = "unknown"
+                else:
+                    identity, gender = random.choice(_DUMMY_IDENTITIES)
+                payload, face_confidence = _build_dummy_detection_payload(camera_name, identity, gender)
+                rules_triggered, alarm_level = _evaluate_rules_for_payload(camera_id, payload)
+                identity_text = identity or "Unknown"
                 return (
                     ts.strftime("%Y-%m-%d %H:%M:%S"),
-                    random.choice(ids),
-                    random.choice(_idents),
-                    round(random.uniform(0.50, 0.99), 3),
-                    json.dumps(
-                        [
-                            {"label": "person", "conf": round(random.random(), 3)},
-                            {"label": random.choice(["car", "bag", "phone"]), "conf": round(random.random(), 3)},
-                        ]
-                    ),
-                    json.dumps([]),
-                    random.choice(_alarms),
-                    f"data/snapshots/snap_{random.randint(100_000, 999_999)}.jpg",
+                    camera_id,
+                    identity_text,
+                    face_confidence,
+                    json.dumps(payload),
+                    json.dumps(rules_triggered),
+                    alarm_level,
+                    f"data/snapshots/debug_cam{camera_id}_{random.randint(100_000, 999_999)}.jpg",
                 )
 
             start = os.path.getsize(self._db_path)
@@ -176,10 +316,12 @@ class _SeedWorker(QThread):
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
 
-            cam_ids = self._debug_service.ensure_cameras(conn)
+            created_cameras = self._debug_service.create_dummy_cameras(conn, count=3)
+            cam_rows = created_cameras or self._debug_service.get_camera_info(conn)
+            self._debug_service.ensure_debug_rules(conn, cam_rows)
+            self._debug_service.ensure_debug_faces(conn, count=len(_DUMMY_IDENTITIES))
+            self._debug_service.ensure_debug_notification_profiles(conn)
             now = datetime.datetime.now()
-            _idents = ["Alice Chen", "Bob Martinez", "Carol King", "David Lee", "Unknown", None]
-            _alarms = [0, 0, 0, 0, 1, 2]
 
             DET_SQL = (
                 "INSERT INTO detection_logs"
@@ -193,16 +335,26 @@ class _SeedWorker(QThread):
             for i in range(self._count):
                 off = random.randint(0, 90 * 86400)
                 ts = now - datetime.timedelta(seconds=off)
+                cam = random.choice(cam_rows)
+                camera_id = int(cam.get("id", 0) or 0)
+                camera_name = str(cam.get("name") or f"Camera {camera_id}")
+                if random.random() < 0.22:
+                    identity = None
+                    gender = "unknown"
+                else:
+                    identity, gender = random.choice(_DUMMY_IDENTITIES)
+                payload, face_confidence = _build_dummy_detection_payload(camera_name, identity, gender)
+                rules_triggered, alarm_level = _evaluate_rules_for_payload(camera_id, payload)
                 rows.append(
                     (
                         ts.strftime("%Y-%m-%d %H:%M:%S"),
-                        random.choice(cam_ids),
-                        random.choice(_idents),
-                        round(random.uniform(0.50, 0.99), 3),
-                        json.dumps([{"label": "person", "conf": round(random.random(), 3)}]),
-                        json.dumps([]),
-                        random.choice(_alarms),
-                        f"data/snapshots/snap_{random.randint(100_000, 999_999)}.jpg",
+                        camera_id,
+                        identity or "Unknown",
+                        face_confidence,
+                        json.dumps(payload),
+                        json.dumps(rules_triggered),
+                        alarm_level,
+                        f"data/snapshots/debug_cam{camera_id}_{random.randint(100_000, 999_999)}.jpg",
                     )
                 )
                 if len(rows) >= BATCH:
@@ -217,7 +369,10 @@ class _SeedWorker(QThread):
                 conn.commit()
 
             conn.close()
-            self.finished.emit(True, f"Inserted {self._count:,} detection log records.")
+            self.finished.emit(
+                True,
+                f"Inserted {self._count:,} detection log records across {max(1, len(created_cameras))} new dummy cameras.",
+            )
         except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             self.finished.emit(False, str(exc))
 
@@ -232,6 +387,7 @@ class DebugTab(QWidget):
         self._cb_http_live = None
         self._cb_ffmpeg_first = None
         self._cb_win_trace = None
+        self._cb_dummy_analytics = None
         self._build_ui()
 
     def load(self) -> None:
@@ -251,6 +407,12 @@ class DebugTab(QWidget):
             wt = db.get_setting("debug_window_trace", False)
             if self._cb_win_trace:
                 self._cb_win_trace.setChecked(wt in (True, 1, "1", "true", "True"))
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
+            pass
+        try:
+            demo_analytics = db.get_setting("debug_dummy_analytics_enabled", False)
+            if self._cb_dummy_analytics:
+                self._cb_dummy_analytics.setChecked(demo_analytics in (True, 1, "1", "true", "True"))
         except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             pass
         try:
@@ -436,6 +598,37 @@ class DebugTab(QWidget):
         h4.addWidget(cb4, stretch=1)
         h4.addStretch()
         vl.addWidget(row4)
+
+        row5 = QFrame()
+        row5.setMinimumHeight(SIZE_ROW_54)
+        row5.setStyleSheet(
+            f"QFrame {{ background: transparent; border: none; border-bottom: {SPACE_XXXS}px solid {_BORDER_DIM}; }}"
+            f"QFrame QLineEdit, QFrame QComboBox, QFrame QSpinBox, QFrame QTextEdit, QFrame QLabel, QFrame QPushButton, QFrame QCheckBox {{ background: transparent; border: none; }}"
+            f"QFrame:hover {{ background: {_ACCENT_HI_BG_03}; }}"
+        )
+        h5 = QHBoxLayout(row5)
+        h5.setContentsMargins(SPACE_20, 0, SPACE_20, 0)
+        h5.setSpacing(SPACE_MD)
+
+        lbl5 = QLabel("Use dummy analytics data")
+        lbl5.setFixedWidth(SIZE_LABEL_W_XL)
+        lbl5.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        lbl5.setStyleSheet(f"color: {_TEXT_SEC}; font-size: {FONT_SIZE_LABEL}px; font-weight: {FONT_WEIGHT_NORMAL};")
+        h5.addWidget(lbl5)
+
+        cb5 = QCheckBox("Render Analytics and PDF reports with synthetic data")
+        cb5.setStyleSheet(f"QCheckBox {{ color: {_TEXT_PRI}; font-size: {FONT_SIZE_LABEL}px; background: transparent; border: none; }}")
+        current_demo = db.get_setting("debug_dummy_analytics_enabled", False)
+        cb5.setChecked(current_demo in (True, 1, "1", "true", "True"))
+
+        def _on_toggle_demo(state: int) -> None:
+            db.set_setting("debug_dummy_analytics_enabled", "1" if state == Qt.CheckState.Checked else "0")
+
+        cb5.stateChanged.connect(_on_toggle_demo)
+        self._cb_dummy_analytics = cb5
+        h5.addWidget(cb5, stretch=1)
+        h5.addStretch()
+        vl.addWidget(row5)
         return card
 
     def _make_action_bar(self) -> QWidget:
@@ -460,6 +653,11 @@ class DebugTab(QWidget):
         try:
             db.set_setting("twitch_enabled", "1" if self._cb_twitch and self._cb_twitch.isChecked() else "0")
             db.set_setting("http_stream_as_live", "1" if self._cb_http_live and self._cb_http_live.isChecked() else "0")
+            db.set_setting("debug_window_trace", "1" if self._cb_win_trace and self._cb_win_trace.isChecked() else "0")
+            db.set_setting(
+                "debug_dummy_analytics_enabled",
+                "1" if self._cb_dummy_analytics and self._cb_dummy_analytics.isChecked() else "0",
+            )
             if self._cb_ffmpeg_first and self._cb_ffmpeg_first.isChecked():
                 db.set_setting("capture_backends", json.dumps(["CAP_FFMPEG", "CAP_ANY", "CAP_MSMF", "CAP_DSHOW"]))
             else:
@@ -640,8 +838,8 @@ class DebugTab(QWidget):
         vl.addWidget(self._seed_progress)
 
         self._seed_status = QLabel(
-            "Populates the database with dummy detection events "
-            "for testing dashboards, reports and the purge feature. Existing data is preserved."
+            "Creates new dummy cameras and populates the database with synthetic detection events "
+            "including real faces (single debug PNG), notification profiles, gender, objects, real rule-engine hits, and heatmap boxes. Existing data is preserved."
         )
         self._seed_status.setWordWrap(True)
         self._seed_status.setStyleSheet(
@@ -678,8 +876,8 @@ class DebugTab(QWidget):
             if ok:
                 QMessageBox.information(self, "Done", msg)
                 self._seed_status.setText(
-                    "Populates the database with dummy detection events "
-                    "for testing dashboards, reports and the purge feature. Existing data is preserved."
+                    "Creates new dummy cameras and populates the database with synthetic detection events "
+                    "including real faces (single debug PNG), notification profiles, gender, objects, real rule-engine hits, and heatmap boxes. Existing data is preserved."
                 )
             else:
                 logger.exception("seed_records error")
@@ -711,7 +909,8 @@ class DebugTab(QWidget):
             return
 
         try:
-            cam_ids = self._debug_service.ensure_cameras(db.get_conn())
+            created_cameras = self._debug_service.create_dummy_cameras(db.get_conn(), count=3)
+            cam_rows = created_cameras or self._debug_service.get_camera_info(db.get_conn())
         except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
             QMessageBox.warning(self, "Error", str(exc))
             return
@@ -721,7 +920,7 @@ class DebugTab(QWidget):
         self._seed_status.setText(f"Flooding to {_fmt_bytes(target)}\u2026  (currently {_fmt_bytes(current)})")
         self._seed_flood_btn.setText("Cancel")
 
-        self._flood_worker = _FloodWorker(db_path, target, cam_ids, self)
+        self._flood_worker = _FloodWorker(db_path, target, cam_rows, self._debug_service, self)
         self._flood_worker.progress.connect(self._seed_progress.setValue)
         self._flood_worker.error.connect(self._on_flood_error)
         self._flood_worker.finished.connect(self._on_flood_done)

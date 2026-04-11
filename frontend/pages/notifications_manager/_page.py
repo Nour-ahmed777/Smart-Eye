@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import re
 import time
 
 from PySide6.QtCore import Qt, QSettings, QEvent
@@ -7,6 +8,7 @@ from PySide6.QtGui import QFont, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
+    QLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -26,7 +28,7 @@ from frontend.styles._btn_styles import _SEGMENT_TAB_BAR, _SEGMENT_TAB_BTN
 from frontend.styles._input_styles import _SEARCH_INPUT
 
 from frontend.styles._colors import _ACCENT_BG_22, _MUTED_BG_25
-from frontend.styles.page_styles import header_bar_style, splitter_handle_style, toolbar_style
+from frontend.styles.page_styles import header_bar_style, saved_clips_scrollbar_style, splitter_handle_style, toolbar_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_9,
@@ -45,8 +47,6 @@ from frontend.ui_tokens import (
     SIZE_HEADER_H,
     SIZE_PANEL_MAX,
     SIZE_PANEL_MIN,
-    SIZE_PANEL_W_340,
-    SIZE_PANEL_W_660,
     SIZE_PILL_H,
     SIZE_SECTION_TALL,
     SPACE_10,
@@ -74,6 +74,39 @@ from ._constants import (
 )
 from ._cards import ProfileCard
 from ._forms import ProfilePanel, SmtpPanel
+
+
+_SHARED_MANAGER_LAYOUT_APP = "ManagerLayout"
+_SHARED_SPLITTER_LEFT_KEY = "splitter/left_width"
+_DEFAULT_SPLITTER_LEFT = 340
+_DEFAULT_SPLITTER_RIGHT = 660
+
+
+def _coerce_left_width(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(value, (list, tuple)) and value:
+        try:
+            return int(value[0])
+        except (ValueError, TypeError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.startswith("@"):
+        return None
+    match = re.search(r"-?\d+", text)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except (ValueError, TypeError):
+        return None
 
 
 class NotificationsConfigPage(QWidget):
@@ -213,12 +246,14 @@ class NotificationsConfigPage(QWidget):
         self._roster_scroll = QScrollArea()
         self._roster_scroll.setWidgetResizable(True)
         self._roster_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._roster_scroll.setStyleSheet(f"border: none; background: {_BG_BASE};")
+        self._roster_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._roster_scroll.setStyleSheet(saved_clips_scrollbar_style(scroll_area_bg=_BG_BASE))
         self._roster_container = QWidget()
         self._roster_container.setStyleSheet(f"background: {_BG_BASE};")
         self._roster_vbox = QVBoxLayout(self._roster_container)
         self._roster_vbox.setContentsMargins(SPACE_SM, SPACE_SM, SPACE_SM, SPACE_SM)
         self._roster_vbox.setSpacing(SPACE_6)
+        self._roster_vbox.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         self._roster_scroll.setWidget(self._roster_container)
         ll.addWidget(self._roster_scroll, stretch=1)
 
@@ -250,18 +285,26 @@ class NotificationsConfigPage(QWidget):
         self._splitter.setStretchFactor(1, 1)
 
         _qs = QSettings("SmartEye", "NotificationsPage")
+        _shared_qs = QSettings("SmartEye", _SHARED_MANAGER_LAYOUT_APP)
         _saved = _qs.value("splitter/sizes")
-        if _saved and len(_saved) == 2:
-            try:
-                self._splitter.setSizes([int(_saved[0]), int(_saved[1])])
-            except (ValueError, TypeError):
-                self._splitter.setSizes([SIZE_PANEL_W_340, SIZE_PANEL_W_660])
-        else:
-            self._splitter.setSizes([SIZE_PANEL_W_340, SIZE_PANEL_W_660])
 
-        self._splitter.splitterMoved.connect(
-            lambda pos, idx: QSettings("SmartEye", "NotificationsPage").setValue("splitter/sizes", self._splitter.sizes())
-        )
+        left_width = _coerce_left_width(_shared_qs.value(_SHARED_SPLITTER_LEFT_KEY))
+        if left_width is None:
+            left_width = _coerce_left_width(_saved)
+        if left_width is None:
+            left_width = _DEFAULT_SPLITTER_LEFT
+
+        left_width = max(SIZE_PANEL_MIN, min(SIZE_PANEL_MAX, left_width))
+        self._splitter.setSizes([left_width, _DEFAULT_SPLITTER_RIGHT])
+        _shared_qs.setValue(_SHARED_SPLITTER_LEFT_KEY, left_width)
+
+        def _save_splitter(_pos, _idx):
+            sizes = self._splitter.sizes()
+            QSettings("SmartEye", "NotificationsPage").setValue("splitter/sizes", sizes)
+            if sizes and len(sizes) >= 1:
+                QSettings("SmartEye", _SHARED_MANAGER_LAYOUT_APP).setValue(_SHARED_SPLITTER_LEFT_KEY, int(sizes[0]))
+
+        self._splitter.splitterMoved.connect(_save_splitter)
 
         root.addWidget(self._splitter, stretch=1)
 

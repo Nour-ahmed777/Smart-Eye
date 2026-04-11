@@ -229,8 +229,8 @@ class SettingsPage(QWidget):
 
         from backend.repository import db as _db
 
-        self._set_debug_visible(_db.get_setting("debug_mode_enabled", "0") == "1")
-        self._set_experimental_visible(_db.get_setting("experimental_mode_enabled", "0") == "1")
+        self._set_debug_visible(_db.get_bool("debug_mode_enabled", False))
+        self._set_experimental_visible(_db.get_bool("experimental_mode_enabled", False))
 
     def _set_debug_visible(self, enabled: bool) -> None:
         self._debug_tab_btn.setVisible(enabled)
