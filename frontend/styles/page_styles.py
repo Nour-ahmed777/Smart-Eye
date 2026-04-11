@@ -1,7 +1,32 @@
 from __future__ import annotations
 
-from frontend.styles._colors import _BG_BASE, _BG_OVERLAY, _BG_RAISED, _BG_SURFACE, _BORDER_DARK, _BORDER_DIM, _TEXT_MUTED, _TEXT_PRI
-from frontend.ui_tokens import FONT_SIZE_CAPTION, FONT_SIZE_MICRO, FONT_WEIGHT_BOLD, FONT_WEIGHT_HEAVY, RADIUS_11, RADIUS_LG, RADIUS_MD, SPACE_14, SPACE_XXXS
+from frontend.styles._colors import (
+    _ACCENT_HI_BG_22,
+    _ACCENT_HI_BG_45,
+    _BG_BASE,
+    _BG_OVERLAY,
+    _BG_RAISED,
+    _BG_SURFACE,
+    _BORDER_DARK,
+    _BORDER_DIM,
+    _TEXT_MUTED,
+    _TEXT_PRI,
+)
+from frontend.ui_tokens import (
+    FONT_SIZE_CAPTION,
+    FONT_SIZE_MICRO,
+    FONT_WEIGHT_BOLD,
+    FONT_WEIGHT_HEAVY,
+    RADIUS_3,
+    RADIUS_11,
+    RADIUS_LG,
+    RADIUS_MD,
+    SIZE_CONTROL_SM,
+    SPACE_6,
+    SPACE_14,
+    SPACE_XXS,
+    SPACE_XXXS,
+)
 
 
 def header_bar_style(widget_id: str | None = None, bg: str = _BG_BASE, border: str = _BORDER_DIM) -> str:
@@ -78,3 +103,17 @@ def filter_tool_button_style() -> str:
         f"QToolButton:pressed {{ background: {_BG_OVERLAY}; }}"
         "QToolButton::menu-indicator { image: none; }"
     )
+
+
+def saved_clips_scrollbar_style(*, scroll_area_bg: str | None = None) -> str:
+    area_bg = f"background: {scroll_area_bg};" if scroll_area_bg else "background: transparent;"
+    return f"""
+QScrollArea {{ border: none; {area_bg} }}
+QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_6}px; margin: {SPACE_XXS}px 0; }}
+QScrollBar::handle:vertical {{
+    background: {_ACCENT_HI_BG_22}; min-height: {SIZE_CONTROL_SM}px; border-radius: {RADIUS_3}px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {_ACCENT_HI_BG_45}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+"""

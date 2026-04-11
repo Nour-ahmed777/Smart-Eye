@@ -60,7 +60,7 @@ def apply_roster_card_style(card: QFrame, object_name: str, is_active: bool) -> 
     ))
 
 
-def build_roster_card_layout(card: QFrame) -> tuple[QVBoxLayout, QVBoxLayout, QHBoxLayout, QHBoxLayout]:
+def build_roster_card_layout(card: QFrame, pills_slot_width: int | None = None) -> tuple[QVBoxLayout, QVBoxLayout, QHBoxLayout, QHBoxLayout]:
     root = QHBoxLayout(card)
     root.setContentsMargins(0, 0, SPACE_10, 0)
     root.setSpacing(0)
@@ -100,7 +100,16 @@ def build_roster_card_layout(card: QFrame) -> tuple[QVBoxLayout, QVBoxLayout, QH
     pills_row = QHBoxLayout()
     pills_row.setContentsMargins(0, 0, 0, 0)
     pills_row.setSpacing(SPACE_6)
-    body.addLayout(pills_row)
+    pills_wrap = QWidget()
+    pills_wrap.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    pills_wrap.setStyleSheet("background: transparent;")
+    pills_wrap.setLayout(pills_row)
+    if pills_slot_width is not None and pills_slot_width > 0:
+        pills_wrap.setFixedWidth(pills_slot_width)
+        pills_wrap.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+    else:
+        pills_wrap.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+    body.addWidget(pills_wrap)
 
     right_row = QHBoxLayout()
     right_row.setContentsMargins(0, 0, 0, 0)

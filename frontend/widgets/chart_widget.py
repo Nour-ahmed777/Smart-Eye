@@ -30,18 +30,31 @@ class ChartWidget(QWidget):
         self._plot_widget.getAxis("bottom").setPen(pg.mkPen(_TEXT_MUTED))
         self._plot_widget.getAxis("left").setTextPen(pg.mkPen(_TEXT_SEC))
         self._plot_widget.getAxis("bottom").setTextPen(pg.mkPen(_TEXT_SEC))
+        self._plot_widget.getAxis("bottom").setStyle(autoExpandTextSpace=True, tickTextOffset=8)
         self._plot_widget.showGrid(x=True, y=True, alpha=0.15)
         layout.addWidget(self._plot_widget)
         self._plot_items = []
         self._empty_item = None
 
+    @staticmethod
+    def _compact_tick_label(value) -> str:
+        text = str(value or "")
+
+        if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+            return text[5:10]
+        return text
+
     def set_line_data(self, x, y, name="", color=_ACCENT, width=2):
+        if self._empty_item is not None:
+            self.clear_data()
         pen = pg.mkPen(color=color, width=width)
         item = self._plot_widget.plot(x, y, pen=pen, name=name)
         self._plot_items.append(item)
         return item
 
     def set_bar_data(self, x, y, color=_SUCCESS_DIM, width=0.6):
+        if self._empty_item is not None:
+            self.clear_data()
         bar = pg.BarGraphItem(x=x, height=y, width=width, brush=color)
         self._plot_widget.addItem(bar)
         self._plot_items.append(bar)
@@ -61,15 +74,39 @@ class ChartWidget(QWidget):
                 self._plot_widget.removeItem(self._empty_item)
             except (AttributeError, RuntimeError):
                 logger.debug("Unable to remove empty-state item", exc_info=True)
+            try:
+                vb = self._plot_widget.getViewBox()
+                vb.removeItem(self._empty_item)
+            except (AttributeError, RuntimeError):
+                logger.debug("Unable to remove empty-state item from viewbox", exc_info=True)
             self._empty_item = None
 
     def set_labels(self, left="", bottom=""):
         self._plot_widget.setLabel("left", left, color=_TEXT_SEC)
         self._plot_widget.setLabel("bottom", bottom, color=_TEXT_SEC)
 
-    def set_x_ticks(self, ticks):
+    def set_x_ticks(self, ticks, max_labels: int = 8):
         axis = self._plot_widget.getAxis("bottom")
-        axis.setTicks([list(enumerate(ticks))])
+        if not ticks:
+            axis.setTicks([[]])
+            return
+
+        total = len(ticks)
+        if max_labels <= 1 or total <= max_labels:
+            indices = list(range(total))
+        else:
+            spread = [round(i * (total - 1) / (max_labels - 1)) for i in range(max_labels)]
+            indices = []
+            seen = set()
+            for idx in spread:
+                i = int(max(0, min(total - 1, idx)))
+                if i not in seen:
+                    seen.add(i)
+                    indices.append(i)
+            if indices and indices[-1] != total - 1:
+                indices.append(total - 1)
+
+        axis.setTicks([[(idx, self._compact_tick_label(ticks[idx])) for idx in indices]])
 
     def set_title(self, title):
         self._plot_widget.setTitle(title, color=_TEXT_PRI, size=f"{FONT_SIZE_SUBHEAD}pt")
