@@ -1,17 +1,20 @@
 ﻿from __future__ import annotations
 
 import logging
+import re
 
 from PySide6.QtCore import QEvent, QSettings, Qt, QObject
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -24,7 +27,7 @@ from frontend.icon_theme import themed_icon_pixmap
 from frontend.styles._btn_styles import _SEGMENT_TAB_BAR, _SEGMENT_TAB_BTN
 from frontend.styles._input_styles import _SEARCH_INPUT
 from frontend.styles._colors import _ACCENT_BG_22, _MUTED_BG_25
-from frontend.styles.page_styles import header_bar_style, splitter_handle_style, toolbar_style
+from frontend.styles.page_styles import header_bar_style, saved_clips_scrollbar_style, splitter_handle_style, toolbar_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
     FONT_SIZE_9,
@@ -41,11 +44,9 @@ from frontend.ui_tokens import (
     SIZE_CONTROL_MD,
     SIZE_CONTROL_SM,
     SIZE_HEADER_H,
-    SIZE_ICON_34,
     SIZE_PANEL_MAX,
     SIZE_PANEL_MIN,
     SIZE_PILL_H,
-    SIZE_ROW_MD,
     SIZE_SECTION_TALL,
     SPACE_10,
     SPACE_3,
@@ -78,6 +79,38 @@ from ._forms import AddCameraPanel
 logger = logging.getLogger(__name__)
 
 _SETTINGS_KEY = "CameraManager"
+_SHARED_MANAGER_LAYOUT_APP = "ManagerLayout"
+_SHARED_SPLITTER_LEFT_KEY = "splitter/left_width"
+_DEFAULT_SPLITTER_LEFT = 340
+_DEFAULT_SPLITTER_RIGHT = 660
+
+
+def _coerce_left_width(value) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+    if isinstance(value, (list, tuple)) and value:
+        try:
+            return int(value[0])
+        except (ValueError, TypeError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if text.startswith("@"):
+        return None
+    match = re.search(r"-?\d+", text)
+    if not match:
+        return None
+    try:
+        return int(match.group(0))
+    except (ValueError, TypeError):
+        return None
 
 
 class CameraManagerPage(QWidget):
@@ -220,13 +253,14 @@ class CameraManagerPage(QWidget):
         self._roster_scroll = QScrollArea()
         self._roster_scroll.setWidgetResizable(True)
         self._roster_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._roster_scroll.setStyleSheet(f"border: none; background: {_BG_BASE};")
+        self._roster_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._roster_scroll.setStyleSheet(saved_clips_scrollbar_style(scroll_area_bg=_BG_BASE))
         self._roster_container = QWidget()
         self._roster_container.setStyleSheet(f"background: {_BG_BASE};")
         self._roster_vbox = QVBoxLayout(self._roster_container)
         self._roster_vbox.setContentsMargins(SPACE_SM, SPACE_SM, SPACE_SM, SPACE_SM)
         self._roster_vbox.setSpacing(SPACE_6)
-        self._roster_vbox.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self._roster_vbox.setSizeConstraint(QLayout.SizeConstraint.SetMinAndMaxSize)
         self._roster_scroll.setWidget(self._roster_container)
         ll.addWidget(self._roster_scroll, stretch=1)
 
@@ -251,14 +285,18 @@ class CameraManagerPage(QWidget):
         self._splitter.setStretchFactor(1, 1)
 
         _qs = QSettings("SmartEye", "CameraManager")
+        _shared_qs = QSettings("SmartEye", _SHARED_MANAGER_LAYOUT_APP)
         _saved = _qs.value("splitter/sizes")
-        if _saved and len(_saved) == 2:
-            try:
-                self._splitter.setSizes([int(_saved[0]), int(_saved[1])])
-            except (ValueError, TypeError):
-                self._splitter.setSizes([340, 660])
-        else:
-            self._splitter.setSizes([340, 660])
+
+        left_width = _coerce_left_width(_shared_qs.value(_SHARED_SPLITTER_LEFT_KEY))
+        if left_width is None:
+            left_width = _coerce_left_width(_saved)
+        if left_width is None:
+            left_width = _DEFAULT_SPLITTER_LEFT
+
+        left_width = max(SIZE_PANEL_MIN, min(SIZE_PANEL_MAX, left_width))
+        self._splitter.setSizes([left_width, _DEFAULT_SPLITTER_RIGHT])
+        _shared_qs.setValue(_SHARED_SPLITTER_LEFT_KEY, left_width)
 
         self._splitter.splitterMoved.connect(self._save_splitter)
 
@@ -266,7 +304,10 @@ class CameraManagerPage(QWidget):
 
     def _save_splitter(self, pos=None, index=None):
         _qs = QSettings("SmartEye", "CameraManager")
-        _qs.setValue("splitter/sizes", self._splitter.sizes())
+        sizes = self._splitter.sizes()
+        _qs.setValue("splitter/sizes", sizes)
+        if sizes and len(sizes) >= 1:
+            QSettings("SmartEye", _SHARED_MANAGER_LAYOUT_APP).setValue(_SHARED_SPLITTER_LEFT_KEY, int(sizes[0]))
 
     def _refresh(self):
         try:
@@ -335,24 +376,13 @@ class CameraManagerPage(QWidget):
                 item.widget().deleteLater()
 
         if not cameras:
-            from PySide6.QtGui import QPixmap
-
             empty_w = QWidget()
+            empty_w.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             empty_w.setStyleSheet("background: transparent; border: none;")
             el = QVBoxLayout(empty_w)
             el.setAlignment(Qt.AlignmentFlag.AlignCenter)
             el.setSpacing(SPACE_10)
             el.setContentsMargins(SPACE_LG, SPACE_XXL, SPACE_LG, SPACE_XXL)
-            icon = QLabel()
-            icon.setFixedSize(SIZE_ROW_MD, SIZE_ROW_MD)
-            icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            icon.setStyleSheet("background: transparent; border: none;")
-            _cpix = QPixmap("frontend/assets/icons/camera.png")
-            if not _cpix.isNull():
-                icon.setPixmap(
-                    _cpix.scaled(SIZE_ICON_34, SIZE_ICON_34, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                )
-            el.addWidget(icon, alignment=Qt.AlignmentFlag.AlignCenter)
             has_filter = self._active_filter != "all"
             has_search = bool(self._search_edit.text().strip())
             title = QLabel("No results" if (has_search or has_filter) else "No cameras yet")
@@ -379,6 +409,9 @@ class CameraManagerPage(QWidget):
             card.clicked.connect(self._on_card_clicked)
             self._roster_vbox.addWidget(card)
             self._card_widgets[cam["id"]] = card
+
+
+        self._roster_vbox.addStretch(1)
 
     def _update_roster_active_state(self):
         for cid, card in list(self._card_widgets.items()):

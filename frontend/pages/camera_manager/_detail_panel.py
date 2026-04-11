@@ -764,6 +764,34 @@ class CameraDetailPanel(QWidget):
                 return QIcon()
             return QIcon(pix)
 
+        plugin_class_widgets: dict[int, tuple[dict, list, float]] = {}
+
+        def _persist_plugin_class_overrides(plugin_id: int) -> None:
+            if plugin_id not in plugin_class_widgets:
+                return
+            cw, classes, def_conf = plugin_class_widgets[plugin_id]
+            for ci, (cls_d, en_sw, sp_w) in cw.items():
+                pcls_id = next((c.get("id") for c in classes if int(c.get("class_index", -1)) == ci), None)
+                if pcls_id is None:
+                    continue
+                u_en = bool(en_sw.isChecked())
+                u_c = float(sp_w.value()) / 100.0
+                g_en = cls_d.get("enabled") not in (0, "0", False)
+                gc = cls_d.get("confidence")
+                try:
+                    gc = float(gc) if gc is not None else def_conf
+                    if gc > 1.0:
+                        gc /= 100.0
+                except (TypeError, ValueError):
+                    gc = def_conf
+                try:
+                    if u_en == g_en and abs(u_c - gc) < 1e-4:
+                        db.remove_camera_plugin_class(cam_id, pcls_id)
+                    else:
+                        db.assign_camera_plugin_class(cam_id, pcls_id, 1 if u_en else 0, u_c)
+                except (sqlite3.Error, OSError, ValueError):
+                    logger.exception("Failed to save class idx %s", ci)
+
         def _build_classes_panel(plugin_id: int) -> tuple:
             wrap = QWidget()
             wrap.setStyleSheet("background:{bg}; border:none;".format(bg=_BG_RAISED))
@@ -773,6 +801,23 @@ class CameraDetailPanel(QWidget):
 
             try:
                 classes = db.get_plugin_classes(plugin_id)
+                if not classes:
+                    try:
+                        from backend.models import model_loader
+
+                        mdl = model_loader.get_loaded_plugins().get(plugin_id)
+                        class_map = getattr(mdl, "class_names", {}) if mdl else {}
+                        if isinstance(class_map, dict) and class_map:
+                            for class_idx, class_name in class_map.items():
+                                try:
+                                    idx_val = int(class_idx)
+                                except (TypeError, ValueError):
+                                    continue
+                                name_txt = str(class_name).strip() or str(idx_val)
+                                db.add_plugin_class(plugin_id, idx_val, name_txt, name_txt)
+                            classes = db.get_plugin_classes(plugin_id)
+                    except (ImportError, RuntimeError, OSError, ValueError):
+                        logger.debug("Failed to hydrate plugin classes for plugin id=%s", plugin_id, exc_info=True)
                 overrides = {c["class_index"]: c for c in db.get_camera_plugin_classes(cam_id, plugin_id)}
                 pd_row = db.get_plugin(plugin_id)
                 def_conf = float(pd_row.get("confidence", 0.5)) if pd_row else 0.5
@@ -895,32 +940,8 @@ class CameraDetailPanel(QWidget):
             def _do_save_cls(
                 _=False,
                 _pid=plugin_id,
-                _cid=cam_id,
-                _cw=cw,
-                _clss=classes,
-                _dc=def_conf,
             ):
-                for ci, (cls_d, en_sw, sp_w) in _cw.items():
-                    pcls_id = next((c.get("id") for c in _clss if int(c.get("class_index", -1)) == ci), None)
-                    if pcls_id is None:
-                        continue
-                    u_en = bool(en_sw.isChecked())
-                    u_c = float(sp_w.value()) / 100.0
-                    g_en = cls_d.get("enabled") not in (0, "0", False)
-                    gc = cls_d.get("confidence")
-                    try:
-                        gc = float(gc) if gc is not None else _dc
-                        if gc > 1.0:
-                            gc /= 100.0
-                    except (TypeError, ValueError):
-                        gc = _dc
-                    try:
-                        if u_en == g_en and abs(u_c - gc) < 1e-4:
-                            db.remove_camera_plugin_class(_cid, pcls_id)
-                        else:
-                            db.assign_camera_plugin_class(_cid, pcls_id, 1 if u_en else 0, u_c)
-                    except (sqlite3.Error, OSError, ValueError):
-                        logger.exception("Failed to save class idx %s", ci)
+                _persist_plugin_class_overrides(_pid)
                 try:
                     notify_plugins_changed()
                 except (RuntimeError, OSError):
@@ -929,6 +950,7 @@ class CameraDetailPanel(QWidget):
             sv_btn.clicked.connect(_do_save_cls)
             sv_row.addWidget(sv_btn)
             wl.addLayout(sv_row)
+            plugin_class_widgets[plugin_id] = (cw, classes, def_conf)
             return wrap, cw
 
         plugin_checks: dict[int, ToggleSwitch] = {}
@@ -1063,6 +1085,10 @@ class CameraDetailPanel(QWidget):
                         db.unassign_plugin_from_camera(cam_id, pid)
                 except (sqlite3.Error, OSError, ValueError):
                     logger.exception("Failed to assign/unassign plugin %s", pid)
+            for pid, cb in plugin_checks.items():
+                if not cb.isChecked():
+                    continue
+                _persist_plugin_class_overrides(pid)
             try:
                 notify_plugins_changed()
             except (RuntimeError, OSError):
@@ -1167,6 +1193,23 @@ class CameraDetailPanel(QWidget):
 
         try:
             classes = db.get_plugin_classes(plugin_id)
+            if not classes:
+                try:
+                    from backend.models import model_loader
+
+                    mdl = model_loader.get_loaded_plugins().get(plugin_id)
+                    class_map = getattr(mdl, "class_names", {}) if mdl else {}
+                    if isinstance(class_map, dict) and class_map:
+                        for class_idx, class_name in class_map.items():
+                            try:
+                                idx_val = int(class_idx)
+                            except (TypeError, ValueError):
+                                continue
+                            name_txt = str(class_name).strip() or str(idx_val)
+                            db.add_plugin_class(plugin_id, idx_val, name_txt, name_txt)
+                        classes = db.get_plugin_classes(plugin_id)
+                except (ImportError, RuntimeError, OSError, ValueError):
+                    logger.debug("Failed to hydrate plugin classes for plugin id=%s", plugin_id, exc_info=True)
             overrides = {c["class_index"]: c for c in db.get_camera_plugin_classes(cam_id, plugin_id)}
             plugin_row_data = db.get_plugin(plugin_id)
             plugin_default_conf = float(plugin_row_data.get("confidence", 0.5)) if plugin_row_data else 0.5

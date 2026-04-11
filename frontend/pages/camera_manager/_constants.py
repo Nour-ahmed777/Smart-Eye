@@ -21,8 +21,6 @@ from frontend.styles._colors import (
     _ACCENT,
     _ACCENT_HI,
     _ACCENT_HI_BG_03,
-    _ACCENT_HI_BG_28,
-    _ACCENT_HI_BG_55,
 )
 from frontend.ui_tokens import (
     FONT_SIZE_BODY,
@@ -91,12 +89,19 @@ QPushButton[class="secondary"]:hover {{ background-color: {_BG_OVERLAY}; color: 
 {_FORM_INPUTS}
 {_FORM_COMBO}
 QScrollArea {{ border: none; background-color: transparent; }}
-QScrollBar:vertical {{ border: none; background: transparent; width: {SPACE_6}px; margin: {SPACE_XXS}px {SPACE_XS}px; }}
-QScrollBar::handle:vertical {{
-    background: {_ACCENT_HI_BG_28}; min-height: {SPACE_28}px; border-radius: {RADIUS_XS}px;
+QScrollBar:vertical {{
+    border: none;
+    background: {_BORDER_DIM};
+    width: {SPACE_6}px;
+    margin: {SPACE_XXS}px {SPACE_XS}px;
+    border-radius: {RADIUS_XS}px;
 }}
-QScrollBar::handle:vertical:hover {{ background: {_ACCENT_HI_BG_55}; }}
+QScrollBar::handle:vertical {{
+    background: {_ACCENT_HI}; min-height: {SPACE_28}px; border-radius: {RADIUS_XS}px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {_TEXT_PRI}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
 QCheckBox {{ color: {_TEXT_PRI}; spacing: {SPACE_SM}px; }}
 QCheckBox::indicator {{
     width: {SIZE_ICON_TINY}px; height: {SIZE_ICON_TINY}px;

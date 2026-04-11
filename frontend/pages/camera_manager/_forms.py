@@ -148,9 +148,27 @@ class AddCameraPanel(QWidget):
         bl.addSpacing(SPACE_XS)
         bl.addWidget(_make_sdiv("Detection"))
 
+        def _left(toggle: ToggleSwitch) -> QWidget:
+            c = QWidget()
+            c.setStyleSheet("background:transparent; border:none;")
+            h = QHBoxLayout(c)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(0)
+            h.addWidget(toggle)
+            h.addStretch()
+            return c
+
         self._face_toggle = ToggleSwitch()
         self._face_toggle.setChecked(False)
-        bl.addWidget(_srow("Face Recognition", self._face_toggle))
+        bl.addWidget(_srow("Face Recognition", _left(self._face_toggle)))
+
+        self._active_plugins_toggle = ToggleSwitch()
+        self._active_plugins_toggle.setChecked(True)
+        bl.addWidget(_srow("Enable Active Plugins", _left(self._active_plugins_toggle)))
+
+        self._enabled_toggle = ToggleSwitch()
+        self._enabled_toggle.setChecked(True)
+        bl.addWidget(_srow("Enable on Add", _left(self._enabled_toggle)))
 
         self._thresh_spin = QSpinBox()
         self._thresh_spin.setRange(1, 100)
@@ -164,10 +182,6 @@ class AddCameraPanel(QWidget):
         self._max_faces_spin.setValue(16)
         self._max_faces_spin.setStyleSheet(_spin_ss())
         bl.addWidget(_srow("Max Faces / Frame", self._max_faces_spin))
-
-        self._enabled_toggle = ToggleSwitch()
-        self._enabled_toggle.setChecked(True)
-        bl.addWidget(_srow("Enable on Add", self._enabled_toggle))
 
         bl.addStretch()
 
@@ -203,6 +217,7 @@ class AddCameraPanel(QWidget):
         self._res_combo.setCurrentIndex(1)
         self._fps_spin.setValue(30)
         self._face_toggle.setChecked(True)
+        self._active_plugins_toggle.setChecked(True)
         self._thresh_spin.setValue(45)
         self._max_faces_spin.setValue(16)
         self._enabled_toggle.setChecked(True)
@@ -237,6 +252,7 @@ class AddCameraPanel(QWidget):
             resolution=self._res_combo.currentText(),
             fps_limit=self._fps_spin.value(),
             face_recognition=1 if self._face_toggle.isChecked() else 0,
+            assign_active_plugins=1 if self._active_plugins_toggle.isChecked() else 0,
             enabled=1 if self._enabled_toggle.isChecked() else 0,
             threshold=self._thresh_spin.value() / 100.0,
             max_faces=int(self._max_faces_spin.value()),
@@ -264,6 +280,12 @@ class AddCameraPanel(QWidget):
                         db.update_camera(cam_id, face_similarity_threshold=self.opts["threshold"])
                     with contextlib.suppress(Exception):
                         db.set_setting(f"camera_{cam_id}_max_faces", self.opts["max_faces"])
+                    if self.opts.get("assign_active_plugins"):
+                        with contextlib.suppress(Exception):
+                            for plug in db.get_plugins(enabled_only=True) or []:
+                                pid = plug.get("id")
+                                if pid is not None:
+                                    db.assign_plugin_to_camera(cam_id, pid)
                     self.done.emit(None, cam_id)
                 except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
                     self.done.emit(exc, None)

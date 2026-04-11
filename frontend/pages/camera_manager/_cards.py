@@ -39,6 +39,7 @@ from frontend.ui_tokens import (
     SIZE_CONTROL_22,
     SIZE_CONTROL_MID,
     SIZE_PANEL_SM,
+    SIZE_PANEL_W_MD,
     SPACE_6,
     SPACE_MD,
     SPACE_XS,
@@ -47,10 +48,9 @@ from frontend.widgets.base.roster_card_base import (
     apply_roster_card_style,
     build_roster_card_layout,
 )
-from frontend.styles.page_styles import muted_label_style, text_style
+from frontend.styles.page_styles import text_style
 
 logger = logging.getLogger(__name__)
-_META_STYLE = muted_label_style(size=FONT_SIZE_CAPTION) + " background: transparent;"
 
 
 class CardPreviewWidget(QWidget):
@@ -175,10 +175,14 @@ class CameraCard(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         apply_roster_card_style(self, "CameraCard", is_active)
 
-        left_layout, info, pills, right = build_roster_card_layout(self)
+        left_layout, info, pills, right = build_roster_card_layout(self, pills_slot_width=SIZE_PANEL_W_MD)
         left_layout.addWidget(CardPreviewWidget(cam["id"], enabled))
 
-        name_lbl = QLabel(cam.get("name", ""))
+        full_name = str(cam.get("name", "") or "")
+        name_lbl = QLabel(full_name)
+        name_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        name_lbl.setMinimumWidth(0)
+        name_lbl.setToolTip(full_name)
         name_font = QFont()
         safe_set_point_size(name_font, FONT_SIZE_CAPTION)
         name_font.setBold(True)
@@ -186,15 +190,6 @@ class CameraCard(QFrame):
         name_lbl.setStyleSheet(text_style(_TEXT_PRI if enabled else _TEXT_SEC, extra="background: transparent;"))
         info.setSpacing(SPACE_XS)
         info.addWidget(name_lbl)
-
-        meta_parts = []
-        if cam.get("source"):
-            meta_parts.append(cam["source"])
-        if cam.get("location"):
-            meta_parts.append(cam["location"])
-        meta_lbl = QLabel(" - ".join(meta_parts) if meta_parts else "--")
-        meta_lbl.setStyleSheet(_META_STYLE)
-        info.addWidget(meta_lbl)
 
         pills.setSpacing(SPACE_6)
         pills.setAlignment(Qt.AlignmentFlag.AlignVCenter)
