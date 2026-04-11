@@ -10,7 +10,17 @@ logger = logging.getLogger(__name__)
 
 def send_email_alert(to_address, subject, body, html=False):
     smtp = config.smtp_config()
+    logger.debug(
+        "Email send requested to=%s host=%s port=%s tls=%s user_set=%s pass_set=%s",
+        to_address,
+        smtp.get("host"),
+        smtp.get("port"),
+        smtp.get("tls", True),
+        bool(smtp.get("user")),
+        bool(smtp.get("password")),
+    )
     if not smtp["host"] or not to_address:
+        logger.warning("Email send skipped: missing host or recipient (host_set=%s to_set=%s)", bool(smtp.get("host")), bool(to_address))
         return False
     msg = MIMEMultipart()
     msg["From"] = smtp["user"]
@@ -28,6 +38,7 @@ def send_email_alert(to_address, subject, body, html=False):
             server.login(smtp["user"], smtp["password"])
         server.sendmail(smtp["user"], [to_address], msg.as_string())
         server.quit()
+        logger.info("Email sent successfully to %s via %s:%s", to_address, smtp.get("host"), smtp.get("port"))
         return True
     except Exception:
         logger.exception("Failed to send email to %s", to_address)

@@ -4,33 +4,39 @@ import time
 
 class EscalationManager:
     def __init__(self):
+        # Keyed by (camera_id, rule_id) to isolate escalation state per camera/session.
         self._active_violations = {}
         self._lock = threading.Lock()
 
-    def update(self, triggered_rules):
+    def update(self, camera_id, triggered_rules):
         now = time.time()
-        current_ids = {r["id"] for r in triggered_rules}
+        cam = int(camera_id) if camera_id is not None else -1
+        current_ids = {int(r["id"]) for r in triggered_rules}
         with self._lock:
-            expired = [rid for rid in self._active_violations if rid not in current_ids]
-            for rid in expired:
-                del self._active_violations[rid]
+            expired = [
+                key for key in self._active_violations if key[0] == cam and key[1] not in current_ids
+            ]
+            for key in expired:
+                del self._active_violations[key]
             for rule in triggered_rules:
-                rid = rule["id"]
-                if rid not in self._active_violations:
-                    self._active_violations[rid] = {
+                rid = int(rule["id"])
+                key = (cam, rid)
+                if key not in self._active_violations:
+                    self._active_violations[key] = {
                         "start_time": now,
                         "rule": rule,
                     }
 
-    def get_escalation_levels(self, triggered_rules):
+    def get_escalation_levels(self, camera_id, triggered_rules):
         now = time.time()
+        cam = int(camera_id) if camera_id is not None else -1
         levels = {}
         from backend.repository import db
 
         for rule in triggered_rules:
-            rid = rule["id"]
+            rid = int(rule["id"])
             with self._lock:
-                active = self._active_violations.get(rid)
+                active = self._active_violations.get((cam, rid))
             if not active:
                 levels[rid] = 0
                 continue
@@ -43,15 +49,23 @@ class EscalationManager:
             levels[rid] = level
         return levels
 
-    def get_active_violations(self):
+    def get_active_violations(self, camera_id):
         now = time.time()
+        cam = int(camera_id) if camera_id is not None else -1
         result = []
+        from backend.repository import db
+
         with self._lock:
-            items = list(self._active_violations.items())
-        for rid, info in items:
-            level = self.get_escalation_levels([info["rule"]]).get(rid, 0)
+            items = [(key, info) for key, info in self._active_violations.items() if key[0] == cam]
+        for (_cam, rid), info in items:
+            level = self.get_escalation_levels(cam, [info["rule"]]).get(rid, 0)
 
             if level <= 0:
+                continue
+            # Only surface "Active Alarms" when the current level explicitly includes popup.
+            actions = db.get_alarm_actions(rule_id=rid, escalation_level=level)
+            has_popup = any(str(a.get("action_type") or "").strip().lower() == "popup" for a in actions)
+            if not has_popup:
                 continue
             result.append(
                 {
@@ -63,9 +77,14 @@ class EscalationManager:
             )
         return result
 
-    def clear(self):
+    def clear(self, camera_id=None):
         with self._lock:
-            self._active_violations.clear()
+            if camera_id is None:
+                self._active_violations.clear()
+                return
+            cam = int(camera_id)
+            for key in [k for k in self._active_violations if k[0] == cam]:
+                self._active_violations.pop(key, None)
 
 
 _instance = None

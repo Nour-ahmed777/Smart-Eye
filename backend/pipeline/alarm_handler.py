@@ -25,6 +25,7 @@ class AlarmHandler:
         self._alarm.setLoopCount(-2)
         self._alarm.setVolume(0.8)
         self._alarm_playing = False
+        self._alarm_level_playing = 0
         self._last_trigger_ts = 0.0
         self._alarm_grace_seconds = 0.35
         self._last_action_times = {}
@@ -49,9 +50,11 @@ class AlarmHandler:
 
     def _enqueue(self, task):
         if self._stop_event.is_set():
+            self._log.debug("Alarm enqueue skipped: handler stopping kind=%s", (task or {}).get("kind"))
             return
         try:
             self._task_queue.put_nowait(task)
+            self._log.debug("Alarm task enqueued kind=%s qsize=%s", (task or {}).get("kind"), self._task_queue.qsize())
         except queue.Full:
 
             try:
@@ -61,7 +64,7 @@ class AlarmHandler:
             try:
                 self._task_queue.put_nowait(task)
             except Exception:
-                self._log.warning("Alarm worker queue full; dropping task")
+                self._log.warning("Alarm worker queue full; dropping task kind=%s", (task or {}).get("kind"))
 
     def _worker_loop(self):
         while not self._stop_event.is_set():
@@ -73,6 +76,7 @@ class AlarmHandler:
                 break
             try:
                 kind = task.get("kind")
+                self._log.debug("Alarm worker running kind=%s", kind)
                 if kind == "action":
                     self._execute_action(task["action"], task["state"], task.get("frame"))
                 elif kind == "log":
@@ -83,39 +87,83 @@ class AlarmHandler:
     def handle_alarms(self, triggered_rules, escalation_levels, state, frame=None):
         now = time.time()
         should_play_alarm = False
+        highest_sound_level = 1
         executed = []
+        self._log.debug(
+            "Handle alarms camera_id=%s triggered=%s escalation_keys=%s",
+            state.get("camera_id"),
+            len(triggered_rules or []),
+            sorted((escalation_levels or {}).keys()),
+        )
         for rule in triggered_rules:
             if not rule.get("enabled", 1):
+                self._log.debug("Skipping disabled rule rule_id=%s", rule.get("id"))
                 continue
             rule_id = rule["id"]
             level = escalation_levels.get(rule_id, 0)
             if level <= 0:
+                self._log.debug("Rule has no active escalation level rule_id=%s level=%s", rule_id, level)
                 continue
+
             actions = db.get_alarm_actions(rule_id=rule_id, escalation_level=level)
+            self._log.debug(
+                "Rule escalation resolved rule_id=%s level=%s rule_action=%s actions=%s",
+                rule_id,
+                level,
+                str(rule.get("action", "") or "").strip().lower(),
+                [str(a.get("action_type") or "") for a in actions],
+            )
             for action in actions:
-                if action.get("action_type") == "sound":
+                atype = str(action.get("action_type") or "").strip().lower()
+                if atype == "sound":
                     should_play_alarm = True
+                    try:
+                        highest_sound_level = max(highest_sound_level, int(action.get("escalation_level") or level or 1))
+                    except Exception:
+                        highest_sound_level = max(highest_sound_level, int(level or 1))
+
                 cooldown = action.get("cooldown_sec", 10)
                 key = (rule_id, action["id"])
                 last = self._last_action_times.get(key, 0)
                 if now - last < cooldown:
+                    self._log.debug(
+                        "Skipping action due cooldown rule_id=%s action_id=%s type=%s remaining=%.2fs",
+                        rule_id,
+                        action.get("id"),
+                        atype,
+                        max(0.0, cooldown - (now - last)),
+                    )
                     continue
                 action_frame = frame.copy() if frame is not None else None
                 self._enqueue({"kind": "action", "action": dict(action), "state": dict(state), "frame": action_frame})
                 self._last_action_times[key] = now
                 executed.append(action)
+                self._log.info(
+                    "Escalation action scheduled rule_id=%s level=%s action_id=%s type=%s",
+                    rule_id,
+                    level,
+                    action.get("id"),
+                    atype,
+                )
 
             log_key = (rule_id, state.get("camera_id"), state.get("identity"))
             if now - self._last_log_ts.get(log_key, 0) < 30.0:
+                self._log.debug("Skipping detection log due debounce rule_id=%s key=%s", rule_id, log_key)
                 continue
             self._last_log_ts[log_key] = now
             log_frame = frame.copy() if frame is not None and config.snapshot_on_alarm() else None
             self._enqueue({"kind": "log", "rule": dict(rule), "level": level, "state": dict(state), "frame": log_frame})
+            self._log.info(
+                "Detection log scheduled rule_id=%s level=%s identity=%s camera_id=%s",
+                rule_id,
+                level,
+                state.get("identity"),
+                state.get("camera_id"),
+            )
 
         if should_play_alarm:
             self._last_trigger_ts = now
-            if not self._alarm_playing:
-                self._start_alarm()
+            self._start_alarm(highest_sound_level)
         else:
             if self._alarm_playing and (now - self._last_trigger_ts > self._alarm_grace_seconds):
                 self._stop_alarm()
@@ -129,7 +177,7 @@ class AlarmHandler:
                 frame,
                 Path(self._data_dir) / "snapshots",
             )
-        db.add_detection_log(
+        row_id = db.add_detection_log(
             camera_id=state.get("camera_id"),
             zone_id=state.get("zone_id"),
             identity=state.get("identity"),
@@ -139,20 +187,88 @@ class AlarmHandler:
             alarm_level=level,
             snapshot_path=snapshot_path,
         )
+        self._log.info(
+            "Detection log written id=%s rule=%s level=%s camera_id=%s identity=%s",
+            row_id,
+            rule.get("name"),
+            level,
+            state.get("camera_id"),
+            state.get("identity"),
+        )
 
     def _execute_action(self, action, state, frame):
-        atype = action["action_type"]
+        atype = str(action.get("action_type") or "").strip().lower()
         avalue = action.get("action_value", "")
+        self._log.debug(
+            "Executing action id=%s type=%s rule_state_camera=%s identity=%s",
+            action.get("id"),
+            atype,
+            state.get("camera_id"),
+            state.get("identity"),
+        )
+        if atype == "popup":
+            # Popup visibility is driven by detection_logs.alarm_level in main window polling.
+            self._log.info("Popup action acknowledged action_id=%s", action.get("id"))
+            return True
         if atype == "email":
-            self._send_email(avalue, state)
+            address, _token = self._resolve_notification_target("email", avalue)
+            if not address:
+                self._log.warning("Email action has no target address")
+                return False
+            self._send_email(address, state)
+            return True
         elif atype == "webhook":
-            self._send_webhook(avalue, state)
+            url, token = self._resolve_notification_target("webhook", avalue)
+            if not url:
+                self._log.warning("Webhook action has no target URL")
+                return False
+            self._send_webhook(url, state, auth_token=token)
+            return True
+        elif atype == "sound":
+            # Sound playback is coordinated in handle_alarms() to pick the highest active level.
+            return True
+        elif atype == "log":
+            # Log actions are persisted by _write_detection_log; no additional side effect needed.
+            return True
+        else:
+            self._log.warning("Unsupported alarm action type: %s", atype)
         return False
 
-    def _start_alarm(self):
-        if self._alarm_playing:
+    def _resolve_notification_target(self, ntype: str, action_value: str):
+        raw = str(action_value or "").strip()
+        if not raw.startswith("profile:"):
+            self._log.debug("Notification target resolved direct type=%s target=%s", ntype, raw)
+            return raw, None
+        try:
+            pid = int(raw.split(":", 1)[1])
+        except Exception:
+            self._log.warning("Invalid profile target format type=%s value=%s", ntype, raw)
+            return "", None
+        try:
+            rows = db.get_notification_profiles(enabled_only=True, ntype=ntype)
+            prof = next((p for p in rows if int(p.get("id") or -1) == pid), None)
+            if not prof:
+                self._log.warning("Notification profile not found/disabled type=%s profile_id=%s", ntype, pid)
+                return "", None
+            endpoint = str(prof.get("endpoint") or "").strip()
+            token = str(prof.get("auth_token") or "").strip() or None
+            self._log.debug(
+                "Notification target resolved profile type=%s profile_id=%s endpoint_set=%s token_set=%s",
+                ntype,
+                pid,
+                bool(endpoint),
+                bool(token),
+            )
+            return endpoint, token
+        except Exception:
+            self._log.exception("Notification target resolution failed type=%s value=%s", ntype, raw)
+            return "", None
+
+    def _start_alarm(self, sound_level: int = 1):
+        level = max(1, min(int(sound_level or 1), 5))
+        if self._alarm_playing and self._alarm_level_playing == level:
             return
-        sound_path = Path("frontend/assets/sounds/alarm_level_1.wav").resolve()
+        sound_path = Path(f"frontend/assets/sounds/alarm_level_{level}.wav").resolve()
         if not sound_path.is_file():
             self._log.warning("Alarm sound not found: %s", sound_path)
             return
@@ -165,6 +281,7 @@ class AlarmHandler:
                     winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_LOOP,
                 )
                 self._alarm_playing = True
+                self._alarm_level_playing = level
                 self._log.info("Alarm STARTED (winsound) -> %s", sound_path)
                 return
             except Exception:
@@ -174,6 +291,7 @@ class AlarmHandler:
         self._alarm.setSource(QUrl.fromLocalFile(str(sound_path)))
         self._alarm.play()
         self._alarm_playing = True
+        self._alarm_level_playing = level
         self._log.info("Alarm STARTED (qt) -> %s", sound_path)
 
     def _stop_alarm(self):
@@ -191,17 +309,22 @@ class AlarmHandler:
             return
         self._alarm.stop()
         self._alarm_playing = False
+        self._alarm_level_playing = 0
         self._log.info("Alarm STOPPED")
 
     def _send_email(self, address, state):
         try:
             subject = f"SmartEye Alert: {state.get('identity', 'Unknown')}"
             body = json.dumps(state.get("detections", {}), indent=2)
-            send_email_alert(address, subject, body)
+            ok = send_email_alert(address, subject, body)
+            if ok:
+                self._log.info("Email sent to %s", address)
+            else:
+                self._log.error("Email send returned failure for %s", address)
         except Exception:
             self._log.exception("Email send failed")
 
-    def _send_webhook(self, url, state):
+    def _send_webhook(self, url, state, auth_token=None):
         try:
             payload = {
                 "identity": state.get("identity"),
@@ -210,7 +333,7 @@ class AlarmHandler:
                 "zone": state.get("zone"),
                 "timestamp": time.time(),
             }
-            send_webhook(url, payload)
+            send_webhook(url, payload, auth_token=auth_token)
         except Exception:
             self._log.exception("Webhook send failed")
 
@@ -245,6 +368,3 @@ def stop_all_sounds():
     with_logging = getattr(handler, "_stop_alarm", None)
     if callable(with_logging):
         handler._stop_alarm()
-    close_fn = getattr(handler, "close", None)
-    if callable(close_fn):
-        close_fn()

@@ -22,7 +22,7 @@ from backend.repository import db
 from frontend.services.rules_service import RulesService
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
-from frontend.styles._colors import _ACCENT_BG_08, _SUCCESS_BG_10, _SUCCESS_BG_20
+from frontend.styles._colors import _SUCCESS_BG_10, _SUCCESS_BG_20
 from frontend.styles._banner_styles import make_edit_banner
 from frontend.styles._btn_styles import _SECONDARY_BTN
 from ._widgets import build_rule_header
@@ -57,7 +57,6 @@ from frontend.ui_tokens import (
 )
 
 from ._constants import (
-    _ACTION_META,
     _ADD_BTN_BLUE,
     _BG_SURFACE,
     _BORDER,
@@ -178,7 +177,6 @@ class _BaseRuleForm(QWidget):
         self._e_action = QComboBox()
         self._e_action.addItems(["alarm", "suppress", "log_only"])
         self._e_action.setStyleSheet(_combo_ss())
-        self._action_pill = None
         body_l.addWidget(_srow("Action", self._e_action))
 
         self._e_camera = QComboBox()
@@ -212,19 +210,6 @@ class _BaseRuleForm(QWidget):
         en_h.addWidget(en_lbl)
         en_h.addStretch()
         body_l.addWidget(_srow("Active", en_wrap))
-
-    def _refresh_action_pill(self, text: str):
-        if self._action_pill is None:
-            return
-        fg, bg, _border, label = _ACTION_META.get(text, (_TEXT_SEC, _ACCENT_BG_08, _BORDER_DIM, text.upper()))
-        self._action_pill.setText(label)
-        self._action_pill.setStyleSheet(f"""
-            color:{fg};
-            background-color:{bg};
-            border:none;
-            border-radius:{RADIUS_5}px; padding:0 {SPACE_SM}px;
-            font-size:{FONT_SIZE_MICRO}px; font-weight:{FONT_WEIGHT_BOLD}; letter-spacing:0.{SPACE_XS}px;
-        """)
 
     def _build_conditions_section(self, body_l: QVBoxLayout):
         body_l.addWidget(_make_sdiv("Conditions"))
@@ -403,7 +388,6 @@ class _EditRuleForm(_BaseRuleForm):
         self._e_logic.setCurrentText(rule.get("logic", "AND"))
         action = rule.get("action", "log_only")
         self._e_action.setCurrentText(action)
-        self._refresh_action_pill(action)
         self._e_priority.setValue(int(rule.get("priority", 0)))
         self._e_enabled.setChecked(bool(rule.get("enabled", 1)))
 
@@ -450,7 +434,7 @@ class _EditRuleForm(_BaseRuleForm):
 
 
 class NewRulePanel(_BaseRuleForm):
-    saved = Signal()
+    saved = Signal(int)
     close_requested = Signal()
 
     def __init__(self, rules_service: RulesService, parent=None):
@@ -486,7 +470,6 @@ class NewRulePanel(_BaseRuleForm):
         self._build_alarms_section(body_l)
 
         self._e_action.setCurrentText("log_only")
-        self._refresh_action_pill("log_only")
         self._e_enabled.setChecked(True)
 
     def _make_action_bar(self) -> QHBoxLayout:
@@ -514,7 +497,6 @@ class NewRulePanel(_BaseRuleForm):
         self._e_desc.clear()
         self._e_logic.setCurrentIndex(0)
         self._e_action.setCurrentText("log_only")
-        self._refresh_action_pill("log_only")
         self._e_priority.setValue(0)
         self._e_camera.setCurrentIndex(0)
         self._e_zone.setCurrentIndex(0)
@@ -543,7 +525,7 @@ class NewRulePanel(_BaseRuleForm):
             self._e_name.setFocus()
             return
 
-        self._rules_service.save_rule(
+        rid = self._rules_service.save_rule(
             None,
             data=dict(
                 name=name,
@@ -558,4 +540,4 @@ class NewRulePanel(_BaseRuleForm):
             conditions=self._collect_conditions(),
             alarms=self._collect_alarms(),
         )
-        self.saved.emit()
+        self.saved.emit(int(rid))

@@ -456,13 +456,13 @@ class RulesManagerPage(QWidget):
             self._new_rule_panel = None
         self._right_stack.setCurrentIndex(0)
 
-    def _on_new_rule_saved(self):
+    def _on_new_rule_saved(self, rule_id: int):
         self._close_new_rule_panel()
         self._refresh()
-        if self._all_rules:
-            newest = self._all_rules[-1]
-            self._active_rule_id = newest["id"]
-            self._detail_panel.load_rule(newest)
+        saved_rule = next((r for r in self._all_rules if int(r.get("id", -1)) == int(rule_id)), None)
+        if saved_rule:
+            self._active_rule_id = saved_rule["id"]
+            self._detail_panel.load_rule(saved_rule)
             self._update_roster_active_state()
 
     def _delete_rule(self, rule_id: int):
@@ -521,7 +521,28 @@ class RulesManagerPage(QWidget):
             detections = log_data.get("detections", "{}")
             if isinstance(detections, str):
                 detections = json.loads(detections)
-            passed, details = self._rules_service.simulate_rule(rid, {"detections": detections})
+
+            # Reconstruct minimal object list from persisted detections for object/objects rule simulation.
+            obj_boxes = []
+            for key, val in (detections or {}).items():
+                if key in ("identity", "gender"):
+                    continue
+                if isinstance(val, bool):
+                    if val:
+                        obj_boxes.append({"class_name": key})
+                    continue
+                if isinstance(val, (int, float)):
+                    cnt = max(0, int(val))
+                    for _ in range(cnt):
+                        obj_boxes.append({"class_name": key})
+
+            passed, details = self._rules_service.simulate_rule(
+                rid,
+                {
+                    "detections": detections,
+                    "object_bboxes": obj_boxes,
+                },
+            )
             text = f"Result: {'TRIGGERED' if passed else 'NOT TRIGGERED'}\n\n"
             text += "\n".join(details) if isinstance(details, list) else str(details)
             result_label.setText(text)

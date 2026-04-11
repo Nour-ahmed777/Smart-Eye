@@ -257,11 +257,6 @@ class _IdentityPicker(QWidget):
         self._combo = QComboBox()
         self._combo.setEditable(True)
         self._combo.lineEdit().setPlaceholderText("Search name or UUID…")
-        self._combo.addItem("\u2500 select identity \u2500", ("", ""))
-        for f in faces:
-            name = f.get("name", "") or ""
-            uuid = f.get("external_uuid", "") or ""
-            self._combo.addItem(name, (name, uuid))
         self._combo.setStyleSheet(_combo_ss())
 
         search_list = []
@@ -292,12 +287,43 @@ class _IdentityPicker(QWidget):
             }}
             QPushButton:hover {{ border-color:{_TEXT_SEC}; color:{_TEXT_PRI}; }}
         """)
-        self._uuid_btn.toggled.connect(lambda c: self._uuid_btn.setText("UUID" if c else "Name"))
+        self._uuid_btn.toggled.connect(self._on_uuid_mode_changed)
 
         h.addWidget(self._combo, stretch=1)
         h.addWidget(self._uuid_btn)
 
+        self._rebuild_items(use_uuid=False)
         self._seed(initial_value)
+
+    def _rebuild_items(self, use_uuid: bool, preserve_value: str = ""):
+        self._combo.blockSignals(True)
+        self._combo.clear()
+        self._combo.addItem("\u2500 select identity \u2500", ("", ""))
+        for f in self._faces:
+            name = (f.get("name", "") or "").strip()
+            uuid = (f.get("external_uuid", "") or "").strip()
+            label = uuid if (use_uuid and uuid) else (name or uuid)
+            if not label:
+                continue
+            self._combo.addItem(label, (name, uuid))
+        self._combo.blockSignals(False)
+
+        if preserve_value:
+            target = preserve_value.strip().lower()
+            for i in range(self._combo.count()):
+                data = self._combo.itemData(i)
+                if not isinstance(data, tuple):
+                    continue
+                candidate = (data[1] if use_uuid else data[0]) or ""
+                if candidate.strip().lower() == target:
+                    self._combo.setCurrentIndex(i)
+                    return
+            self._combo.setCurrentText(preserve_value)
+
+    def _on_uuid_mode_changed(self, checked: bool):
+        self._uuid_btn.setText("UUID" if checked else "Name")
+        preserve = self.get_value()
+        self._rebuild_items(use_uuid=checked, preserve_value=preserve)
 
     def _seed(self, value: str):
         if not value:
@@ -435,7 +461,15 @@ class ConditionRow(QFrame):
             self._attr.setCurrentText(attribute)
         self._attr.setStyleSheet(_combo_ss())
 
-        _OPS = [("equals", "eq"), ("not equals", "neq"), ("contains", "contains"), ("greater than", "gt"), ("less than", "lt")]
+        _OPS = [
+            ("equals", "eq"),
+            ("not equals", "neq"),
+            ("contains", "contains"),
+            ("greater than", "gt"),
+            ("less than", "lt"),
+            ("greater than or equal", "gte"),
+            ("less than or equal", "lte"),
+        ]
         self._op = QComboBox()
         for label, key in _OPS:
             self._op.addItem(label, key)
@@ -543,8 +577,11 @@ class AlarmCard(QFrame):
 
         row.addWidget(_lbl("ACTION"))
         self._type = QComboBox()
-        self._type.addItems(["popup", "sound", "email", "webhook", "log"])
-        self._type.setCurrentText(data.get("action_type", "popup"))
+        self._type.addItems(["sound", "popup", "email", "webhook"])
+        initial_type = data.get("action_type", "sound")
+        if initial_type not in ("sound", "popup", "email", "webhook"):
+            initial_type = "sound"
+        self._type.setCurrentText(initial_type)
         self._type.setFixedWidth(SIZE_BTN_W_LG)
         self._type.setStyleSheet(_combo_ss())
         self._type.currentIndexChanged.connect(self._update_ui)
@@ -570,9 +607,11 @@ class AlarmCard(QFrame):
         self._cooldown.setToolTip("Minimum gap between repeat triggers")
         row.addWidget(self._cooldown)
 
-        self._val_edit = QLineEdit(data.get("action_value", ""))
-        self._val_edit.setStyleSheet(_input_ss())
-        row.addWidget(self._val_edit, stretch=1)
+        self._val_combo = QComboBox()
+        self._val_combo.setEditable(True)
+        self._val_combo.setStyleSheet(_combo_ss())
+        row.addWidget(self._val_combo, stretch=1)
+        self._initial_action_value = str(data.get("action_value", "") or "")
 
         self._sound_lbl = QLabel()
         self._sound_lbl.setStyleSheet(
@@ -638,6 +677,43 @@ class AlarmCard(QFrame):
 
         self._update_ui()
 
+    def _load_notification_targets(self, ntype: str, current_value: str):
+        self._val_combo.blockSignals(True)
+        self._val_combo.clear()
+        self._val_combo.addItem("Custom target…", "")
+        try:
+            profiles = db.get_notification_profiles(enabled_only=True, ntype=ntype)
+        except (sqlite3.Error, RuntimeError, AttributeError, TypeError, ValueError):
+            profiles = []
+
+        for p in profiles:
+            pid = int(p.get("id") or 0)
+            name = str(p.get("name") or "").strip() or f"{ntype.title()} Profile {pid}"
+            endpoint = str(p.get("endpoint") or "").strip()
+            label = f"{name} ({endpoint})" if endpoint else name
+            self._val_combo.addItem(label, f"profile:{pid}")
+
+        self._val_combo.blockSignals(False)
+
+        value = (current_value or "").strip()
+        if value:
+            idx = self._val_combo.findData(value)
+            if idx >= 0:
+                self._val_combo.setCurrentIndex(idx)
+                return
+            if not value.startswith("profile:"):
+                self._val_combo.setCurrentText(value)
+                return
+        self._val_combo.setCurrentIndex(0)
+        if self._val_combo.lineEdit() is not None:
+            self._val_combo.lineEdit().setPlaceholderText("email address" if ntype == "email" else "webhook URL")
+
+    def _current_target_value(self) -> str:
+        data = self._val_combo.currentData()
+        if isinstance(data, str) and data.startswith("profile:"):
+            return data
+        return self._val_combo.currentText().strip()
+
     def _update_ui(self):
         self.setStyleSheet(f"""
             QFrame#AlarmCard {{
@@ -652,7 +728,7 @@ class AlarmCard(QFrame):
         is_sound = t == "sound"
         has_val = t in ("email", "webhook")
 
-        self._val_edit.setVisible(has_val)
+        self._val_combo.setVisible(has_val)
         self._sound_lbl.setVisible(is_sound)
         self._mute.setVisible(is_sound)
         self._vol_slider.setVisible(is_sound)
@@ -665,7 +741,8 @@ class AlarmCard(QFrame):
             self._vol_slider.setEnabled(not disabled)
             self._vol_lbl.setEnabled(not disabled)
         elif has_val:
-            self._val_edit.setPlaceholderText("email address" if t == "email" else "webhook URL")
+            current_val = self._current_target_value() or self._initial_action_value
+            self._load_notification_targets(t, current_val)
 
     def get_data(self) -> dict:
         t = self._type.currentText()
@@ -674,7 +751,7 @@ class AlarmCard(QFrame):
             vol = 0.0 if self._mute.isChecked() else self._vol_slider.value() / 100.0
             val = f"{path}|{vol:.2f}"
         else:
-            val = self._val_edit.text().strip()
+            val = self._current_target_value()
         return {
             "escalation_level": self._level.value(),
             "trigger_after_sec": self._delay.value(),
@@ -728,26 +805,31 @@ class RuleCard(QFrame):
 
         left_layout, info, pills, right = build_roster_card_layout(self, pills_slot_width=SIZE_PANEL_W_MD)
         left_layout.addWidget(HeatBar(heat_level, enabled))
+        pills_wrap = pills.parentWidget()
+        if pills_wrap is not None:
+            pills_wrap.setFixedWidth(0)
+            pills_wrap.hide()
+
         info.setSpacing(SPACE_XS)
 
-        full_rule_name = str(rule.get("name", ""))
+        full_rule_name = str(rule.get("name") or "Rule").strip() or "Rule"
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(SPACE_6)
         name_lbl = QLabel(full_rule_name)
-        name_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        name_lbl.setMinimumWidth(0)
+        name_lbl.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        name_lbl.setMinimumWidth(SPACE_20)
         name_lbl.setToolTip(full_rule_name)
         name_font = QFont()
         safe_set_point_size(name_font, FONT_SIZE_CAPTION)
         name_font.setBold(True)
         name_lbl.setFont(name_font)
         name_lbl.setStyleSheet(f"color: {_TEXT_PRI if enabled else _TEXT_SEC}; background: transparent;")
-        info.addWidget(name_lbl)
+        title_row.addWidget(name_lbl, stretch=1)
+        info.addLayout(title_row)
 
-        pills.setSpacing(SPACE_6)
-        pills.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        pills.addWidget(_pill(action_label, action_fg, action_bg))
-        pills.addWidget(_pill(logic, _ACCENT_HI, _ACCENT_BG_12))
-        if priority:
-            pills.addWidget(_pill(f"P{priority}", _TEXT_SEC, _MUTED_BG_10))
+        right.addWidget(_pill(action_label, action_fg, action_bg))
+        right.addWidget(_pill(logic, _ACCENT_HI, _ACCENT_BG_12))
 
         toggle = ToggleSwitch(width=SIZE_CONTROL_MID, height=SIZE_CONTROL_22)
         toggle.setChecked(enabled)

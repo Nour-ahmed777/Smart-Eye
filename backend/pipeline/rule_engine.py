@@ -10,28 +10,49 @@ import threading
 import time
 
 
+def _normalize_operator(op: str) -> str:
+    val = str(op or "").strip().lower()
+    aliases = {
+        "equals": "eq",
+        "not equals": "neq",
+        "greater than": "gt",
+        "less than": "lt",
+        "greater than or equal": "gte",
+        "less than or equal": "lte",
+    }
+    return aliases.get(val, val)
+
+
 def _compile_condition(cond):
     attr = cond["attribute"]
-    op = cond["operator"]
+    op = _normalize_operator(cond["operator"])
     expected = _normalize_attr_value(attr, cond["value"])
     is_obj = attr in ("object", "objects") or attr.startswith("object.") or attr.startswith("object:")
 
     if is_obj:
         try:
             exp_num = float(expected)
-            if op in ("eq", "equals"):
+            if op == "eq":
 
                 def check_fn(objs, _e=exp_num):
                     return len(objs) == _e
-            elif op in ("neq", "not equals"):
+            elif op == "neq":
 
                 def check_fn(objs, _e=exp_num):
                     return len(objs) != _e
-            elif op in ("gte", "greater than or equal"):
+            elif op == "gt":
+
+                def check_fn(objs, _e=exp_num):
+                    return len(objs) > _e
+            elif op == "lt":
+
+                def check_fn(objs, _e=exp_num):
+                    return len(objs) < _e
+            elif op == "gte":
 
                 def check_fn(objs, _e=exp_num):
                     return len(objs) >= _e
-            elif op in ("lte", "less than or equal"):
+            elif op == "lte":
 
                 def check_fn(objs, _e=exp_num):
                     return len(objs) <= _e
@@ -39,11 +60,11 @@ def _compile_condition(cond):
                 check_fn = None
         except (ValueError, TypeError):
             _es = str(expected).lower()
-            if op in ("eq", "equals"):
+            if op in ("eq", "contains"):
 
                 def check_fn(objs, _e=_es):
                     return _e in {str(o.get("class_name") or o.get("class") or "").lower() for o in objs}
-            elif op in ("neq", "not equals"):
+            elif op == "neq":
 
                 def check_fn(objs, _e=_es):
                     return _e not in {str(o.get("class_name") or o.get("class") or "").lower() for o in objs}
@@ -74,6 +95,10 @@ def _compile_condition(cond):
                 return actual == _en
             if _op == "neq":
                 return actual != _en
+            if _op == "gt":
+                return actual > _en
+            if _op == "lt":
+                return actual < _en
             if _op == "gte":
                 return actual >= _en
             if _op == "lte":
@@ -84,6 +109,8 @@ def _compile_condition(cond):
             return a == _es
         if _op == "neq":
             return a != _es
+        if _op == "contains":
+            return _es in a
         return False
 
     return (attr, False, check_val)
@@ -181,19 +208,25 @@ class RuleEngine:
             if not valid_results:
                 continue
             logic = rule.get("logic", "AND")
-            passed = all(valid_results) if logic == "AND" else any(valid_results)
+            has_unknown = any(r is None for r in results)
+            if logic == "AND":
+                # Fail closed for AND rules when any condition is unknown.
+                passed = (not has_unknown) and all(valid_results)
+            else:
+                passed = any(valid_results)
             if passed:
                 if rule["action"] == "suppress":
-                    suppressed.add(rule["name"])
+                    suppressed.add(int(rule["id"]))
                 else:
                     triggered.append(rule)
-        final = [r for r in triggered if r["name"] not in suppressed]
+        final = [r for r in triggered if int(r["id"]) not in suppressed]
         return final
 
 
 def _evaluate_condition(actual, operator, expected):
+    operator = _normalize_operator(operator)
     if isinstance(actual, bool):
-        expected_bool = expected.lower() in ("true", "1", "yes")
+        expected_bool = str(expected).lower() in ("true", "1", "yes")
         if operator == "eq":
             return actual == expected_bool
         if operator == "neq":
@@ -208,6 +241,10 @@ def _evaluate_condition(actual, operator, expected):
             return actual == expected_num
         if operator == "neq":
             return actual != expected_num
+        if operator == "gt":
+            return actual > expected_num
+        if operator == "lt":
+            return actual < expected_num
         if operator == "gte":
             return actual >= expected_num
         if operator == "lte":
@@ -219,28 +256,35 @@ def _evaluate_condition(actual, operator, expected):
         return actual_str == expected_str
     if operator == "neq":
         return actual_str != expected_str
+    if operator == "contains":
+        return expected_str in actual_str
     return False
 
 
 def _evaluate_object_condition(objects, operator, expected):
+    operator = _normalize_operator(operator)
     try:
         exp_num = float(expected)
         cnt = len(objects)
-        if operator in ("eq", "equals"):
+        if operator == "eq":
             return cnt == exp_num
-        if operator in ("neq", "not equals"):
+        if operator == "neq":
             return cnt != exp_num
-        if operator in ("gte", "greater than or equal"):
+        if operator == "gt":
+            return cnt > exp_num
+        if operator == "lt":
+            return cnt < exp_num
+        if operator == "gte":
             return cnt >= exp_num
-        if operator in ("lte", "less than or equal"):
+        if operator == "lte":
             return cnt <= exp_num
         return False
     except Exception:
         exp_str = str(expected).lower()
         classes = {str(o.get("class_name") or o.get("class") or "").lower() for o in objects}
-        if operator in ("eq", "equals"):
+        if operator in ("eq", "contains"):
             return exp_str in classes
-        if operator in ("neq", "not equals"):
+        if operator == "neq":
             return exp_str not in classes
         return False
 
@@ -272,7 +316,11 @@ def simulate_rule(rule_id, state):
     if not valid:
         return False, "All conditions skipped"
     logic = rule.get("logic", "AND")
-    passed = all(valid) if logic == "AND" else any(valid)
+    has_unknown = any(r is None for r in results)
+    if logic == "AND":
+        passed = (not has_unknown) and all(valid)
+    else:
+        passed = any(valid)
     return passed, details
 
 

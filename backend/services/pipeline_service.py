@@ -27,8 +27,8 @@ class PipelineService:
     ) -> dict:
         triggered = result.pop("_triggered", [])
         if triggered:
-            self._escalation.update(triggered)
-            levels = self._escalation.get_escalation_levels(triggered)
+            self._escalation.update(self._camera_id, triggered)
+            levels = self._escalation.get_escalation_levels(self._camera_id, triggered)
             self._alarm.handle_alarms(triggered, levels, result, frame)
             if on_detection_event is not None:
                 try:
@@ -36,11 +36,11 @@ class PipelineService:
                 except Exception:
                     logger.exception("Detection event callback failed")
         else:
-            self._escalation.update([])
+            self._escalation.update(self._camera_id, [])
             self._alarm.handle_alarms([], {}, result, frame)
 
         result["triggered_rules"] = [r["name"] for r in triggered]
-        result["active_violations"] = self._escalation.get_active_violations()
+        result["active_violations"] = self._escalation.get_active_violations(self._camera_id)
 
         if enable_inbox:
             try:

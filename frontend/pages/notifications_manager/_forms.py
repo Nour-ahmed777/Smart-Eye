@@ -28,6 +28,7 @@ from frontend.styles.page_styles import divider_style, muted_label_style, sectio
 from frontend.widgets.toast import show_toast
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
+from frontend.widgets.action_feedback import build_status_label, flash_status, make_close_button, make_save_button
 
 from frontend.styles._input_styles import _FORM_INPUT_TITLE
 from frontend.styles._colors import (
@@ -208,22 +209,21 @@ class SmtpPanel(QWidget):
         test_btn.setFixedHeight(SIZE_CONTROL_MD)
         test_btn.setStyleSheet(_SECONDARY_BTN)
         test_btn.clicked.connect(self._test_smtp)
+        self._smtp_test_btn = test_btn
+        self._smtp_status_lbl = build_status_label()
 
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(SIZE_CONTROL_MD)
+        cancel_btn = make_close_button("Cancel")
         cancel_btn.setFixedWidth(SIZE_BTN_W_SM)
-        cancel_btn.setStyleSheet(_SECONDARY_BTN)
         cancel_btn.clicked.connect(self.close_requested.emit)
 
-        save_btn = QPushButton("Save")
-        save_btn.setFixedHeight(SIZE_CONTROL_MD)
-        save_btn.setStyleSheet(_PRIMARY_BTN)
+        save_btn = make_save_button("Save")
         save_btn.clicked.connect(self._save_smtp)
 
         ab = QHBoxLayout()
         ab.setContentsMargins(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD)
         ab.setSpacing(SPACE_SM)
         ab.addWidget(test_btn)
+        ab.addWidget(self._smtp_status_lbl)
         ab.addStretch()
         ab.addWidget(cancel_btn)
         ab.addWidget(save_btn)
@@ -249,7 +249,7 @@ class SmtpPanel(QWidget):
         from utils.config import invalidate_cache
 
         invalidate_cache()
-        QMessageBox.information(self, "Saved", "SMTP configuration saved.")
+        flash_status(self._smtp_status_lbl, "Saved")
 
     def _test_smtp(self):
         to = self._smtp_user.text().strip()
@@ -263,11 +263,7 @@ class SmtpPanel(QWidget):
         try:
             ok = test_email(to)
             if ok:
-                QMessageBox.information(
-                    self,
-                    "Email Sent",
-                    f"Test email sent to  {to}.\nCheck your inbox (and spam folder).",
-                )
+                flash_status(self._smtp_status_lbl, "Test sent")
             else:
                 QMessageBox.warning(
                     self,
@@ -545,21 +541,21 @@ class ProfilePanel(QWidget):
         test_btn.setStyleSheet(_SECONDARY_BTN)
         test_btn.setVisible(editing)
         test_btn.clicked.connect(lambda: self._test_profile(p))
+        self._test_btn = test_btn
         ab.addWidget(test_btn)
+
+        self._profile_status_lbl = build_status_label()
+        ab.addWidget(self._profile_status_lbl)
 
         ab.addStretch()
 
-        self._cancel_btn = QPushButton("Cancel")
-        self._cancel_btn.setFixedHeight(SIZE_CONTROL_MD)
+        self._cancel_btn = make_close_button("Cancel")
         self._cancel_btn.setFixedWidth(SIZE_BTN_W_SM)
-        self._cancel_btn.setStyleSheet(_SECONDARY_BTN)
         self._cancel_btn.clicked.connect(self.close_requested.emit)
         ab.addWidget(self._cancel_btn)
 
-        self._close_btn = QPushButton("Close")
-        self._close_btn.setFixedHeight(SIZE_CONTROL_MD)
+        self._close_btn = make_close_button("Close")
         self._close_btn.setFixedWidth(SIZE_BTN_W_80)
-        self._close_btn.setStyleSheet(_SECONDARY_BTN)
         self._close_btn.clicked.connect(self.close_requested.emit)
         ab.addWidget(self._close_btn)
 
@@ -570,9 +566,7 @@ class ProfilePanel(QWidget):
         self._edit_btn.clicked.connect(self._toggle_edit_mode)
         ab.addWidget(self._edit_btn)
 
-        self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedHeight(SIZE_CONTROL_MD)
-        self._save_btn.setStyleSheet(_PRIMARY_BTN)
+        self._save_btn = make_save_button("Save")
         self._save_btn.clicked.connect(self._do_save)
         ab.addWidget(self._save_btn)
 
@@ -648,6 +642,8 @@ class ProfilePanel(QWidget):
             saved_id = pid
         if saved_id is not None:
             self.saved.emit(saved_id)
+            if hasattr(self, "_profile_status_lbl") and self._profile_status_lbl is not None and isValid(self._profile_status_lbl):
+                flash_status(self._profile_status_lbl, "Saved")
         self._set_edit_mode(False)
 
     def _test_profile(self, profile: dict):
@@ -660,12 +656,8 @@ class ProfilePanel(QWidget):
             else:
                 ok = test_webhook(target, token or None)
             if ok:
-                if db.get_bool("ui_show_save_popups", False):
-                    QMessageBox.information(
-                        self,
-                        "Success",
-                        f"Test {ptype} sent to:\n{target}",
-                    )
+                if hasattr(self, "_profile_status_lbl") and self._profile_status_lbl is not None and isValid(self._profile_status_lbl):
+                    flash_status(self._profile_status_lbl, "Test sent")
                 else:
                     show_toast(self, f"Test {ptype} sent to {target}")
             else:
@@ -689,4 +681,6 @@ class ProfilePanel(QWidget):
         self._save_btn = None
         self._cancel_btn = None
         self._close_btn = None
+        self._profile_status_lbl = None
+        self._smtp_status_lbl = None
 

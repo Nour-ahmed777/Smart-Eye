@@ -471,8 +471,8 @@ class LogsViewerPage(QWidget):
         if date_range.swapped:
             self._date_from.setDate(QDate(date_range.start.year, date_range.start.month, date_range.start.day))
             self._date_to.setDate(QDate(date_range.end.year, date_range.end.month, date_range.end.day))
-        date_from = date_range.start.strftime("%Y-%m-%d")
-        date_to = date_range.end.strftime("%Y-%m-%d")
+        date_from = date_range.start.strftime("%Y-%m-%d 00:00:00")
+        date_to = date_range.end.strftime("%Y-%m-%d 23:59:59")
         camera_id = self._camera_combo.currentData()
         log_type = self._type_combo.currentText()
         search = self._search_edit.text().strip()
