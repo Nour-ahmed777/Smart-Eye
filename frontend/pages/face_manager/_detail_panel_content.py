@@ -16,6 +16,7 @@ from backend.repository import db
 from frontend.app_theme import safe_set_point_size
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
+from frontend.widgets.action_feedback import make_manager_footer_layout
 
 from frontend.styles._colors import (
     _ACCENT_BG_08,
@@ -354,31 +355,29 @@ def build_face_content(panel, face: dict, layout: QVBoxLayout) -> None:
     sep2.setStyleSheet(f"background: {_BORDER_DIM}; border: none; max-height: {SPACE_XXXS}px;")
     layout.addWidget(sep2)
 
-    action_row = QHBoxLayout()
-    action_row.setContentsMargins(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD)
-    action_row.setSpacing(SPACE_SM)
-
     del_btn = ConfirmDeleteButton("Delete", "Sure?")
     del_btn.setFixedHeight(SIZE_CONTROL_MD)
     del_btn.setFixedWidth(SIZE_BTN_W_MD)
     del_btn.set_button_styles(_TEXT_BTN_RED_DEFAULT, _TEXT_BTN_RED_CONFIRM)
     del_btn.set_confirm_callback(lambda fid=panel._face_id: panel.delete_requested.emit(fid))
-    action_row.addWidget(del_btn)
-    action_row.addStretch()
 
     close_btn = QPushButton("Close")
     close_btn.setFixedHeight(SIZE_CONTROL_MD)
     close_btn.setFixedWidth(SIZE_BTN_W_80)
     close_btn.setStyleSheet(_TEXT_BTN_GHOST)
     close_btn.clicked.connect(lambda _c=False: panel.close_requested.emit())
-    action_row.addWidget(close_btn)
 
     panel._edit_btn = QPushButton("Edit")
     panel._edit_btn.setFixedHeight(SIZE_CONTROL_MD)
     panel._edit_btn.setFixedWidth(SIZE_BTN_W_80)
     panel._edit_btn.setStyleSheet(_TEXT_BTN_BLUE)
     panel._edit_btn.clicked.connect(panel._toggle_edit_mode)
-    action_row.addWidget(panel._edit_btn)
-
-    layout.addLayout(action_row)
+    layout.addLayout(
+        make_manager_footer_layout(
+            left_widget=del_btn,
+            right_widgets=[close_btn, panel._edit_btn],
+            margins=(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD),
+            spacing=SPACE_SM,
+        )
+    )
 

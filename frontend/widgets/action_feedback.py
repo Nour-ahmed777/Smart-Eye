@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPropertyAnimation
-from PySide6.QtWidgets import QGraphicsOpacityEffect, QLabel, QPushButton
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton, QWidget
 
-from frontend.styles._btn_styles import _PRIMARY_BTN, _SECONDARY_BTN
+from frontend.styles._btn_styles import _TEXT_BTN_BLUE, _TEXT_BTN_GHOST
 from frontend.styles._colors import _SUCCESS
 from frontend.ui_tokens import FONT_SIZE_LABEL, FONT_WEIGHT_BOLD, SIZE_CONTROL_MD
 
@@ -38,12 +38,33 @@ def flash_status(label: QLabel, text: str, duration_ms: int = 1000) -> None:
 def make_save_button(text: str = "Save") -> QPushButton:
     btn = QPushButton(text)
     btn.setFixedHeight(SIZE_CONTROL_MD)
-    btn.setStyleSheet(_PRIMARY_BTN)
+    btn.setStyleSheet(_TEXT_BTN_BLUE)
     return btn
 
 
 def make_close_button(text: str = "Close") -> QPushButton:
     btn = QPushButton(text)
     btn.setFixedHeight(SIZE_CONTROL_MD)
-    btn.setStyleSheet(_SECONDARY_BTN)
+    btn.setStyleSheet(_TEXT_BTN_GHOST)
     return btn
+
+
+def make_manager_footer_layout(
+    *,
+    left_widget: QWidget | None = None,
+    center_widget: QWidget | None = None,
+    right_widgets: list[QWidget] | None = None,
+    margins: tuple[int, int, int, int] = (0, 0, 0, 0),
+    spacing: int = 8,
+) -> QHBoxLayout:
+    row = QHBoxLayout()
+    row.setContentsMargins(*margins)
+    row.setSpacing(spacing)
+    if left_widget is not None:
+        row.addWidget(left_widget)
+    if center_widget is not None:
+        row.addWidget(center_widget)
+    row.addStretch()
+    for widget in right_widgets or []:
+        row.addWidget(widget)
+    return row

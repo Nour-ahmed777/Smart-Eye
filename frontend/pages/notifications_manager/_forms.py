@@ -28,7 +28,13 @@ from frontend.styles.page_styles import divider_style, muted_label_style, sectio
 from frontend.widgets.toast import show_toast
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
-from frontend.widgets.action_feedback import build_status_label, flash_status, make_close_button, make_save_button
+from frontend.widgets.action_feedback import (
+    build_status_label,
+    flash_status,
+    make_close_button,
+    make_manager_footer_layout,
+    make_save_button,
+)
 
 from frontend.styles._input_styles import _FORM_INPUT_TITLE
 from frontend.styles._colors import (
@@ -522,10 +528,7 @@ class ProfilePanel(QWidget):
         div.setStyleSheet(divider_style(_BORDER_DIM))
         root.addWidget(div)
 
-        ab = QHBoxLayout()
-        ab.setContentsMargins(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD)
-        ab.setSpacing(SPACE_SM)
-
+        del_btn = None
         if editing:
             pid = p.get("id")
             del_btn = ConfirmDeleteButton("Delete", "Sure?")
@@ -533,7 +536,6 @@ class ProfilePanel(QWidget):
             del_btn.setFixedWidth(SIZE_BTN_W_MD)
             del_btn.set_button_styles(_TEXT_BTN_RED, _TEXT_BTN_RED_CONFIRM)
             del_btn.set_confirm_callback(lambda: self.delete_requested.emit(pid))
-            ab.addWidget(del_btn)
 
         test_btn = QPushButton("Test")
         test_btn.setFixedHeight(SIZE_CONTROL_MD)
@@ -542,35 +544,40 @@ class ProfilePanel(QWidget):
         test_btn.setVisible(editing)
         test_btn.clicked.connect(lambda: self._test_profile(p))
         self._test_btn = test_btn
-        ab.addWidget(test_btn)
 
         self._profile_status_lbl = build_status_label()
-        ab.addWidget(self._profile_status_lbl)
-
-        ab.addStretch()
 
         self._cancel_btn = make_close_button("Cancel")
         self._cancel_btn.setFixedWidth(SIZE_BTN_W_SM)
         self._cancel_btn.clicked.connect(self.close_requested.emit)
-        ab.addWidget(self._cancel_btn)
 
         self._close_btn = make_close_button("Close")
         self._close_btn.setFixedWidth(SIZE_BTN_W_80)
         self._close_btn.clicked.connect(self.close_requested.emit)
-        ab.addWidget(self._close_btn)
 
         self._edit_btn = QPushButton("Edit")
         self._edit_btn.setFixedHeight(SIZE_CONTROL_MD)
         self._edit_btn.setFixedWidth(SIZE_BTN_W_80)
         self._edit_btn.setStyleSheet(_TEXT_BTN_BLUE)
         self._edit_btn.clicked.connect(self._toggle_edit_mode)
-        ab.addWidget(self._edit_btn)
 
         self._save_btn = make_save_button("Save")
         self._save_btn.clicked.connect(self._do_save)
-        ab.addWidget(self._save_btn)
-
-        root.addLayout(ab)
+        root.addLayout(
+            make_manager_footer_layout(
+                left_widget=del_btn,
+                center_widget=test_btn,
+                right_widgets=[
+                    self._profile_status_lbl,
+                    self._cancel_btn,
+                    self._close_btn,
+                    self._edit_btn,
+                    self._save_btn,
+                ],
+                margins=(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD),
+                spacing=SPACE_SM,
+            )
+        )
 
         self._set_edit_mode(self._edit_mode or not editing)
 
@@ -589,7 +596,7 @@ class ProfilePanel(QWidget):
                 self._edit_btn.setVisible(True)
                 if enabled:
                     self._edit_btn.setText("Save")
-                    self._edit_btn.setStyleSheet(_PRIMARY_BTN)
+                    self._edit_btn.setStyleSheet(_TEXT_BTN_BLUE)
                 else:
                     self._edit_btn.setText("Edit")
                     self._edit_btn.setStyleSheet(_TEXT_BTN_BLUE)

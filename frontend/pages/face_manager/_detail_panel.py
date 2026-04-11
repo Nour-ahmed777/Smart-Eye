@@ -33,7 +33,6 @@ from frontend.ui_tokens import (
 )
 from ._constants import (
     _ACCENT_HI,
-    _PRIMARY_BTN,
     _TEXT_BTN_BLUE,
     _TEXT_MUTED,
     _TEXT_PRI,
@@ -222,7 +221,7 @@ class DetailPanel(QWidget):
         if hasattr(self, "_edit_btn"):
             if enabled:
                 self._edit_btn.setText("Save")
-                self._edit_btn.setStyleSheet(_PRIMARY_BTN)
+                self._edit_btn.setStyleSheet(_TEXT_BTN_BLUE)
             else:
                 self._edit_btn.setText("Edit")
                 self._edit_btn.setStyleSheet(_TEXT_BTN_BLUE)

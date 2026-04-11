@@ -22,9 +22,9 @@ from backend.repository import db
 from frontend.services.rules_service import RulesService
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
 from frontend.widgets.toggle_switch import ToggleSwitch
+from frontend.widgets.action_feedback import make_manager_footer_layout
 from frontend.styles._colors import _SUCCESS_BG_10, _SUCCESS_BG_20
 from frontend.styles._banner_styles import make_edit_banner
-from frontend.styles._btn_styles import _SECONDARY_BTN
 from ._widgets import build_rule_header
 from frontend.styles._input_styles import _FORM_INPUT_TITLE, _FORM_INPUTS
 from frontend.ui_tokens import (
@@ -36,6 +36,7 @@ from frontend.ui_tokens import (
     FONT_WEIGHT_NORMAL,
     RADIUS_3,
     RADIUS_5,
+    SIZE_BTN_W_80,
     SIZE_BTN_W_MD,
     SIZE_BTN_W_SM,
     SIZE_CONTROL_MD,
@@ -63,6 +64,8 @@ from ._constants import (
     _BORDER_DIM,
     _PRIMARY_BTN,
     _SUCCESS,
+    _TEXT_BTN_BLUE,
+    _TEXT_BTN_GHOST,
     _TEXT_BTN_RED,
     _TEXT_BTN_RED_CONFIRM,
     _TEXT_MUTED,
@@ -357,30 +360,29 @@ class _EditRuleForm(_BaseRuleForm):
         self._build_alarms_section(body_l)
 
     def _make_action_bar(self) -> QHBoxLayout:
-        ab = QHBoxLayout()
-        ab.setContentsMargins(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD)
-        ab.setSpacing(SPACE_SM)
         del_btn = ConfirmDeleteButton("Delete", "Sure?")
         del_btn.setFixedHeight(SIZE_CONTROL_MD)
         del_btn.setFixedWidth(SIZE_BTN_W_MD)
         del_btn.set_button_styles(_TEXT_BTN_RED, _TEXT_BTN_RED_CONFIRM)
         del_btn.set_confirm_callback(lambda: self.delete_requested.emit())
-        ab.addWidget(del_btn)
-        ab.addStretch()
 
         cancel = QPushButton("Cancel")
         cancel.setFixedHeight(SIZE_CONTROL_MD)
-        cancel.setFixedWidth(SIZE_BTN_W_SM)
-        cancel.setStyleSheet(_SECONDARY_BTN)
+        cancel.setFixedWidth(SIZE_BTN_W_80)
+        cancel.setStyleSheet(_TEXT_BTN_GHOST)
         cancel.clicked.connect(lambda: self.cancel_requested.emit())
-        ab.addWidget(cancel)
 
         save = QPushButton("Save")
         save.setFixedHeight(SIZE_CONTROL_MD)
-        save.setStyleSheet(_PRIMARY_BTN)
+        save.setFixedWidth(SIZE_BTN_W_80)
+        save.setStyleSheet(_TEXT_BTN_BLUE)
         save.clicked.connect(self._do_save)
-        ab.addWidget(save)
-        return ab
+        return make_manager_footer_layout(
+            left_widget=del_btn,
+            right_widgets=[cancel, save],
+            margins=(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD),
+            spacing=SPACE_SM,
+        )
 
     def _seed_from_rule(self, rule: dict):
         self._e_name.setText(rule.get("name", ""))
@@ -473,22 +475,21 @@ class NewRulePanel(_BaseRuleForm):
         self._e_enabled.setChecked(True)
 
     def _make_action_bar(self) -> QHBoxLayout:
-        ab = QHBoxLayout()
-        ab.setContentsMargins(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD)
-        ab.setSpacing(SPACE_SM)
-        ab.addStretch()
         close = QPushButton("Close")
         close.setFixedHeight(SIZE_CONTROL_MD)
-        close.setFixedWidth(SIZE_BTN_W_SM)
-        close.setStyleSheet(_SECONDARY_BTN)
+        close.setFixedWidth(SIZE_BTN_W_80)
+        close.setStyleSheet(_TEXT_BTN_GHOST)
         close.clicked.connect(lambda: self.close_requested.emit())
-        ab.addWidget(close)
         save = QPushButton("Save")
         save.setFixedHeight(SIZE_CONTROL_MD)
-        save.setStyleSheet(_PRIMARY_BTN)
+        save.setFixedWidth(SIZE_BTN_W_80)
+        save.setStyleSheet(_TEXT_BTN_BLUE)
         save.clicked.connect(self._do_save)
-        ab.addWidget(save)
-        return ab
+        return make_manager_footer_layout(
+            right_widgets=[close, save],
+            margins=(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD),
+            spacing=SPACE_SM,
+        )
 
     def reset(self):
         self._alarm_cards.clear()

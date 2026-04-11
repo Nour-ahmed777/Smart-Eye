@@ -46,12 +46,12 @@ from frontend.ui_tokens import (
 
 from ._constants import (
     _DANGER,
-    _DANGER_BTN,
-    _PRIMARY_BTN,
     _BG_RAISED,
     _BORDER_DIM,
     _STYLESHEET,
     _SUCCESS,
+    _TEXT_BTN_BLUE,
+    _TEXT_BTN_RED,
     _TEXT_PRI,
     _TEXT_SEC,
     _compose_name,
@@ -297,12 +297,12 @@ class _EnrollPanelMixin:
 
         self._enroll_save_btn = QPushButton("Save")
         self._enroll_save_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
-        self._enroll_save_btn.setStyleSheet(_PRIMARY_BTN)
+        self._enroll_save_btn.setStyleSheet(_TEXT_BTN_BLUE)
         btn_row.addWidget(self._enroll_save_btn)
 
         cancel_btn = QPushButton("Close")
         cancel_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
-        cancel_btn.setStyleSheet(_DANGER_BTN)
+        cancel_btn.setStyleSheet(_TEXT_BTN_RED)
         cancel_btn.clicked.connect(self._close_enroll_panel)
         btn_row.addWidget(cancel_btn)
 

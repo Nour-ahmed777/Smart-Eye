@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from backend.repository import db
 from frontend.services.rules_service import RulesService
 from frontend.widgets.confirm_delete_button import ConfirmDeleteButton
+from frontend.widgets.action_feedback import make_manager_footer_layout
 from frontend.styles._colors import (
     _ACCENT_HI_BG_20,
     _BORDER_DIM_00,
@@ -269,31 +270,31 @@ class RuleDetailPanel(QWidget):
         sep.setStyleSheet(f"background:{_BORDER_DIM};border:none;max-height:{SPACE_XXXS}px;")
         lay.addWidget(sep)
 
-        ab = QHBoxLayout()
-        ab.setContentsMargins(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD)
-        ab.setSpacing(SPACE_SM)
         del_btn = ConfirmDeleteButton("Delete", "Sure?")
         del_btn.setFixedHeight(SIZE_CONTROL_MD)
         del_btn.setFixedWidth(SIZE_BTN_W_MD)
         del_btn.set_button_styles(_TEXT_BTN_RED, _TEXT_BTN_RED_CONFIRM)
         del_btn.set_confirm_callback(lambda: self.delete_requested.emit(self._rule_id))
-        ab.addWidget(del_btn)
-        ab.addStretch()
 
         close_btn = QPushButton("Close")
         close_btn.setFixedHeight(SIZE_CONTROL_MD)
         close_btn.setFixedWidth(SIZE_BTN_W_80)
         close_btn.setStyleSheet(_TEXT_BTN_GHOST)
         close_btn.clicked.connect(lambda: self.close_requested.emit())
-        ab.addWidget(close_btn)
 
         edit_btn = QPushButton("Edit")
         edit_btn.setFixedHeight(SIZE_CONTROL_MD)
         edit_btn.setFixedWidth(SIZE_BTN_W_80)
         edit_btn.setStyleSheet(_TEXT_BTN_BLUE)
         edit_btn.clicked.connect(self._open_edit)
-        ab.addWidget(edit_btn)
-        lay.addLayout(ab)
+        lay.addLayout(
+            make_manager_footer_layout(
+                left_widget=del_btn,
+                right_widgets=[close_btn, edit_btn],
+                margins=(SPACE_XL, SPACE_10, SPACE_XL, SPACE_MD),
+                spacing=SPACE_SM,
+            )
+        )
 
     def _open_edit(self):
         if self._rule is None:

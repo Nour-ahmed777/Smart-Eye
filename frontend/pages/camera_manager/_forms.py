@@ -44,6 +44,7 @@ from ._constants import (
     _BG_SURFACE,
     _BORDER_DIM,
     _PRIMARY_BTN,
+    _TEXT_BTN_BLUE,
     _TEXT_BTN_GHOST,
     _TEXT_MUTED,
     _TEXT_PRI,
@@ -204,7 +205,7 @@ class AddCameraPanel(QWidget):
 
         add_btn = QPushButton("Add Camera")
         add_btn.setFixedHeight(SIZE_CONTROL_MD)
-        add_btn.setStyleSheet(_PRIMARY_BTN)
+        add_btn.setStyleSheet(_TEXT_BTN_BLUE)
         add_btn.clicked.connect(self._do_save)
         ab.addWidget(add_btn)
         lay.addLayout(ab)
