@@ -269,11 +269,7 @@ class PerformanceWidget(QFrame):
             prov_items = [p.strip().lower() for p in prov_raw.split(",") if p.strip()]
             primary = prov_items[0] if prov_items else prov_raw.lower()
             has_gpu = any(any(k in tok for k in ("dml", "cuda", "rocm", "openvino", "coreml", "gpu")) for tok in prov_items)
-            has_cpu = any("cpu" in tok for tok in prov_items)
-
-            if has_gpu and has_cpu:
-                branded = "Hybrid (GPU preferred, CPU fallback)"
-            elif has_gpu:
+            if has_gpu or any(k in primary for k in ("dml", "cuda", "rocm", "openvino", "coreml", "gpu")):
                 branded = f"GPU ({gpu_label})"
             else:
                 branded = f"CPU ({cpu_long})"

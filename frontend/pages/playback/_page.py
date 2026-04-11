@@ -282,16 +282,6 @@ class PlaybackPage(QWidget):
         _sep1.setStyleSheet(divider_style(_BORDER_DIM, SPACE_XL))
         tl.addWidget(_sep1)
 
-        det_lbl = QLabel("Detection")
-        det_lbl.setStyleSheet(
-            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD}; letter-spacing: 0.{SPACE_XS}px;"
-        )
-        tl.addWidget(det_lbl)
-        self._detect_toggle = ToggleSwitch()
-        self._detect_toggle.setToolTip("Enable detection overlay during playback")
-        self._detect_toggle.toggled.connect(self._on_detection_toggled)
-        tl.addWidget(self._detect_toggle)
-
         face_lbl = QLabel("Face")
         face_lbl.setStyleSheet(
             f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD}; letter-spacing: 0.{SPACE_XS}px;"
@@ -305,9 +295,19 @@ class PlaybackPage(QWidget):
         self._class_filters_btn = QPushButton("Object Classes")
         self._class_filters_btn.setFixedHeight(SIZE_CONTROL_MD)
         self._class_filters_btn.setStyleSheet(_SECONDARY_BTN)
-        self._class_filters_btn.setToolTip("Choose object classes to exclude from playback detection")
+        self._class_filters_btn.setToolTip("Choose plugin/object classes to exclude during playback")
         self._class_filters_btn.clicked.connect(self._open_class_filters_dialog)
         tl.addWidget(self._class_filters_btn)
+
+        plugins_lbl = QLabel("Plugins")
+        plugins_lbl.setStyleSheet(
+            f"color: {_TEXT_MUTED}; font-size: {FONT_SIZE_CAPTION}px; font-weight: {FONT_WEIGHT_BOLD}; letter-spacing: 0.{SPACE_XS}px;"
+        )
+        tl.addWidget(plugins_lbl)
+        self._detect_toggle = ToggleSwitch()
+        self._detect_toggle.setToolTip("Enable plugin/object detection during playback")
+        self._detect_toggle.toggled.connect(self._on_plugins_toggled)
+        tl.addWidget(self._detect_toggle)
 
         _sep2 = QWidget()
         _sep2.setFixedSize(SPACE_XXXS, SPACE_XL)
@@ -320,7 +320,7 @@ class PlaybackPage(QWidget):
         )
         tl.addWidget(rec_lbl)
         self._record_toggle = ToggleSwitch()
-        self._record_toggle.setToolTip("Saves a clip to data/clips/ when a rule fires. Requires Detection ON.")
+        self._record_toggle.setToolTip("Saves a clip to data/clips/ when a rule fires. Requires Face or Plugins ON.")
         self._record_toggle.toggled.connect(self._on_record_toggled)
         tl.addWidget(self._record_toggle)
         self._load_playback_toggle_settings()
@@ -635,15 +635,13 @@ QSlider::handle:horizontal {{
     def _on_clip_failed(self, message: str) -> None:
         self._clip_status.setText(message)
 
-    def _on_detection_toggled(self, state: bool) -> None:
+    def _on_plugins_toggled(self, state: bool) -> None:
         try:
-            db.set_setting("playback_detection_enabled", bool(state))
+            db.set_setting("playback_plugins_enabled", bool(state))
         except (sqlite3.Error, OSError, ValueError):
-            logger.warning("Failed to persist playback detection setting", exc_info=True)
-        if not state and self._record_toggle and self._record_toggle.isChecked():
-            self._record_toggle.setChecked(False)
+            logger.warning("Failed to persist playback plugins setting", exc_info=True)
         if self._playback_thread:
-            self._playback_thread.set_detection_enabled(state)
+            self._playback_thread.set_plugins_enabled(state)
             self._playback_thread.set_record_enabled(self._record_toggle.isChecked())
             self._apply_playback_detection_filters()
 
@@ -678,11 +676,12 @@ QSlider::handle:horizontal {{
     def _apply_playback_detection_filters(self) -> None:
         if not self._playback_thread:
             return
+        self._playback_thread.set_plugins_enabled(self._detect_toggle.isChecked())
         self._playback_thread.set_face_detection_enabled(self._face_detect_toggle.isChecked() if self._face_detect_toggle else True)
         self._playback_thread.set_disabled_object_classes(self._disabled_playback_classes)
 
     def _on_record_toggled(self, state: bool) -> None:
-        if state and not self._detect_toggle.isChecked():
+        if state and not (self._detect_toggle.isChecked() or (self._face_detect_toggle and self._face_detect_toggle.isChecked())):
             self._detect_toggle.setChecked(True)
         try:
             db.set_setting("playback_record_enabled", bool(state))
@@ -693,7 +692,7 @@ QSlider::handle:horizontal {{
 
     def _load_playback_toggle_settings(self) -> None:
         try:
-            det = db.get_bool("playback_detection_enabled", False)
+            plugins = db.get_bool("playback_plugins_enabled", db.get_bool("playback_detection_enabled", False))
             rec = db.get_bool("playback_record_enabled", False)
             face = db.get_bool("playback_face_detection_enabled", True)
             raw_disabled = db.get_setting("playback_disabled_object_classes", [])
@@ -705,7 +704,7 @@ QSlider::handle:horizontal {{
             self._disabled_playback_classes = {
                 self._normalize_class_name(v) for v in (raw_disabled or []) if self._normalize_class_name(v)
             }
-            self._detect_toggle.setChecked(bool(det))
+            self._detect_toggle.setChecked(bool(plugins))
             self._record_toggle.setChecked(bool(rec))
             if self._face_detect_toggle:
                 self._face_detect_toggle.setChecked(bool(face))
@@ -840,7 +839,7 @@ QSlider::handle:horizontal {{
         if self._class_filter_dialog is not None:
             return
         dlg = QDialog(self)
-        dlg.setWindowTitle("Object Detection Classes")
+        dlg.setWindowTitle("Plugin Object Classes")
         apply_popup_theme(dlg)
         dlg.setModal(False)
         dlg.setFixedWidth(420)
@@ -849,7 +848,7 @@ QSlider::handle:horizontal {{
         layout.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
         layout.setSpacing(SPACE_SM)
 
-        hint = QLabel("Uncheck classes to disable them during playback detection.")
+        hint = QLabel("Uncheck classes to disable them during plugin detection in playback.")
         hint.setWordWrap(True)
         hint.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION))
         layout.addWidget(hint)
@@ -1262,7 +1261,7 @@ QSlider::handle:horizontal {{
         self._stop()
         self._path_edit.setText(path)
         self._playback_thread = PlaybackThread(path, virtual_camera_id=self._rule_camera_id)
-        self._playback_thread.set_detection_enabled(self._detect_toggle.isChecked())
+        self._playback_thread.set_plugins_enabled(self._detect_toggle.isChecked())
         self._playback_thread.set_record_enabled(self._record_toggle.isChecked())
         self._apply_playback_detection_filters()
         self._playback_thread.frame_ready.connect(self._on_frame)

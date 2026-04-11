@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -38,6 +39,14 @@ from ._constants import (
 
 logger = logging.getLogger(__name__)
 
+_PROVIDER_PRESETS = [
+    ("Auto (best available)", "auto"),
+    ("CPU only", "cpu"),
+    ("NVIDIA GPU (CUDA)", "cuda"),
+    ("Intel/AMD GPU (DirectML)", "dml"),
+    ("AMD GPU (ROCm)", "rocm"),
+]
+
 
 class PerformanceTab(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -64,11 +73,38 @@ class PerformanceTab(QWidget):
         bl.addWidget(_make_sdiv("GPU Acceleration"))
 
         self._gpu_toggle = ToggleSwitch()
+        self._gpu_toggle.toggled.connect(self._sync_provider_controls)
         bl.addWidget(
             _srow(
                 "Enable GPU",
                 self._gpu_toggle,
                 hint="GPU is auto-detected via ONNX Runtime providers. AMD uses ROCm; Intel/AMD on Windows use DirectML.",
+            )
+        )
+
+        self._face_provider = QComboBox()
+        self._face_provider.setStyleSheet(_combo_ss())
+        for label, value in _PROVIDER_PRESETS:
+            self._face_provider.addItem(label, value)
+        self._face_provider.setFixedHeight(_FIELD_H)
+        bl.addWidget(
+            _srow(
+                "Face provider",
+                self._face_provider,
+                hint="Choose provider profile for face recognition. Preset also applies tuned defaults.",
+            )
+        )
+
+        self._plugin_provider = QComboBox()
+        self._plugin_provider.setStyleSheet(_combo_ss())
+        for label, value in _PROVIDER_PRESETS:
+            self._plugin_provider.addItem(label, value)
+        self._plugin_provider.setFixedHeight(_FIELD_H)
+        bl.addWidget(
+            _srow(
+                "Plugins provider",
+                self._plugin_provider,
+                hint="Choose provider profile for loaded ONNX plugins. Preset also applies tuned defaults.",
             )
         )
 
@@ -205,7 +241,27 @@ class PerformanceTab(QWidget):
         return bar
 
     def _save(self) -> None:
+        face_pref = str(self._face_provider.currentData() or "auto")
+        plugin_pref = str(self._plugin_provider.currentData() or "auto")
+
+        unsupported = self._get_unsupported_provider_prefs(face_pref, plugin_pref)
+        if unsupported:
+            supported = ", ".join(self._get_supported_provider_prefs())
+            details = "\n".join(f"- {item}" for item in unsupported)
+            QMessageBox.warning(
+                self,
+                "Unsupported Provider",
+                "Cannot save because one or more selected providers are not supported on this device.\n\n"
+                f"{details}\n\n"
+                f"Supported options on this device: {supported}",
+            )
+            return
+
         db.set_setting("gpu_enabled", "1" if self._gpu_toggle.isChecked() else "0")
+        # Always persist user-selected provider preferences, even if unsupported on this machine.
+        # This allows copying config to another machine/GPU without losing intent.
+        db.set_setting("face_onnx_provider_preference", face_pref)
+        db.set_setting("plugin_onnx_provider_preference", plugin_pref)
         db.set_setting("max_threads", str(self._max_threads.value()))
         db.set_setting("frame_skip", str(self._frame_skip.value()))
         db.set_setting("detection_interval", str(self._detection_interval.value()))
@@ -215,6 +271,8 @@ class PerformanceTab(QWidget):
         db.set_setting("ui_unload_on_leave", 1 if self._unload_tabs.isChecked() else 0)
         db.set_setting("ui_unload_idle_min", str(self._unload_idle_min.value()))
         db.set_setting("auto_pause_live_when_idle", 1 if self._auto_pause_live.isChecked() else 0)
+
+        self._apply_provider_tuning(face_pref, plugin_pref)
 
         try:
             from utils.resource_limiter import apply_limits
@@ -228,13 +286,23 @@ class PerformanceTab(QWidget):
 
         try:
             from backend.models import model_loader
+            from utils import config as _cfg
 
+            _cfg.invalidate_cache()
+            model_loader.load_face_model_async()
+            notify_plugins_changed = None
+            try:
+                from backend.pipeline.detector_manager import notify_plugins_changed as _npc
+
+                notify_plugins_changed = _npc
+            except Exception:
+                notify_plugins_changed = None
+            if notify_plugins_changed:
+                notify_plugins_changed()
             model_loader.load_face_model()
         except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
             logger.exception("Failed to reload face model after performance settings save")
         if db.get_bool("ui_show_save_popups", False):
-            from PySide6.QtWidgets import QMessageBox
-
             QMessageBox.information(self, "Saved", "Performance settings saved.")
         else:
             self._flash_status("Saved")
@@ -260,6 +328,14 @@ class PerformanceTab(QWidget):
 
     def load(self) -> None:
         self._gpu_toggle.setChecked(db.get_bool("gpu_enabled", False))
+        face_pref = str(db.get_setting("face_onnx_provider_preference", "auto") or "auto")
+        plugin_pref = str(db.get_setting("plugin_onnx_provider_preference", "auto") or "auto")
+
+        face_idx = self._face_provider.findData(face_pref)
+        self._face_provider.setCurrentIndex(face_idx if face_idx >= 0 else 0)
+        plugin_idx = self._plugin_provider.findData(plugin_pref)
+        self._plugin_provider.setCurrentIndex(plugin_idx if plugin_idx >= 0 else 0)
+
         self._max_threads.setValue(int(db.get_int("max_threads", 4) or 4))
         self._frame_skip.setValue(int(db.get_int("frame_skip", 0) or 0))
         self._detection_interval.setValue(int(db.get_int("detection_interval", 1) or 1))
@@ -272,4 +348,62 @@ class PerformanceTab(QWidget):
         self._unload_tabs.setChecked(db.get_bool("ui_unload_on_leave", True))
         self._unload_idle_min.setValue(int(db.get_int("ui_unload_idle_min", 5) or 5))
         self._auto_pause_live.setChecked(db.get_bool("auto_pause_live_when_idle", False))
+        self._sync_provider_controls(self._gpu_toggle.isChecked())
+
+    def _sync_provider_controls(self, gpu_enabled: bool) -> None:
+        # "Enable GPU" is the master guard for provider profile controls.
+        self._face_provider.setEnabled(bool(gpu_enabled))
+        self._plugin_provider.setEnabled(bool(gpu_enabled))
+
+    def _get_supported_provider_prefs(self) -> list[str]:
+        # These are preference keys (not ORT provider class names).
+        supported = ["auto", "cpu"]
+        try:
+            import onnxruntime as ort
+
+            avail = set(ort.get_available_providers() or [])
+        except Exception:
+            avail = set()
+
+        if "CUDAExecutionProvider" in avail:
+            supported.append("cuda")
+        if "DmlExecutionProvider" in avail:
+            supported.append("dml")
+        if "ROCMExecutionProvider" in avail:
+            supported.append("rocm")
+        return supported
+
+    def _get_unsupported_provider_prefs(self, face_pref: str, plugin_pref: str) -> list[str]:
+        supported = set(self._get_supported_provider_prefs())
+        issues: list[str] = []
+        if face_pref not in supported:
+            issues.append(f"Face provider: {face_pref}")
+        if plugin_pref not in supported:
+            issues.append(f"Plugins provider: {plugin_pref}")
+        return issues
+
+    def _apply_provider_tuning(self, face_pref: str, plugin_pref: str) -> None:
+        # Plugin profile drives frame/inference pacing defaults.
+        if plugin_pref == "cuda":
+            db.set_setting("detection_interval", "1")
+            db.set_setting("live_infer_dim", "512")
+            db.set_setting("playback_infer_target_fps", "16")
+        elif plugin_pref == "dml":
+            db.set_setting("detection_interval", "1")
+            db.set_setting("live_infer_dim", "448")
+            db.set_setting("playback_infer_target_fps", "12")
+        elif plugin_pref == "rocm":
+            db.set_setting("detection_interval", "1")
+            db.set_setting("live_infer_dim", "512")
+            db.set_setting("playback_infer_target_fps", "14")
+        elif plugin_pref == "cpu":
+            db.set_setting("detection_interval", "2")
+            db.set_setting("live_infer_dim", "320")
+            db.set_setting("playback_infer_target_fps", "8")
+
+        # Face profile drives face-ID throughput defaults.
+        if face_pref in ("cuda", "dml", "rocm"):
+            db.set_setting("max_faces_identify_per_frame", "16")
+        elif face_pref == "cpu":
+            db.set_setting("max_faces_identify_per_frame", "8")
 

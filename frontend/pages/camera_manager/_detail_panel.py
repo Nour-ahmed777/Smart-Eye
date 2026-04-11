@@ -879,7 +879,7 @@ class CameraDetailPanel(QWidget):
                 hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
                 hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
                 tbl.setColumnWidth(0, SIZE_TABLE_COL_SM)
-                tbl.setColumnWidth(2, SIZE_BTN_W_84)
+                tbl.setColumnWidth(2, SIZE_BTN_W_MD)
                 tbl.verticalHeader().setDefaultSectionSize(SIZE_BADGE_H)
 
                 for row_i, cls in enumerate(classes):
@@ -906,7 +906,7 @@ class CameraDetailPanel(QWidget):
                     sp = QSpinBox()
                     sp.setRange(0, 100)
                     sp.setSuffix("%")
-                    sp.setFixedWidth(SIZE_FIELD_W_XS)
+                    sp.setFixedWidth(SIZE_BTN_W_SM)
                     sp.setStyleSheet(_spin_ss())
                     if idx in overrides and overrides[idx].get("confidence") is not None:
                         raw = float(overrides[idx]["confidence"])
@@ -918,7 +918,7 @@ class CameraDetailPanel(QWidget):
                     cell2 = QWidget()
                     cell2.setStyleSheet("background:transparent;")
                     h2 = QHBoxLayout(cell2)
-                    h2.setContentsMargins(SPACE_XS, 0, SPACE_SM, 0)
+                    h2.setContentsMargins(0, 0, 0, 0)
                     h2.setAlignment(Qt.AlignmentFlag.AlignVCenter)
                     h2.addWidget(sp)
                     tbl.setCellWidget(row_i, 2, cell2)
@@ -930,26 +930,6 @@ class CameraDetailPanel(QWidget):
                 tbl.setFixedHeight(row_h_total + hdr_h + SPACE_XXS)
                 wl.addWidget(tbl)
 
-            sv_row = QHBoxLayout()
-            sv_row.setContentsMargins(SPACE_20, SPACE_XS, SPACE_14, SPACE_XXS)
-            sv_row.addStretch()
-            sv_btn = QPushButton("Save Classes")
-            sv_btn.setFixedHeight(SIZE_CONTROL_24)
-            sv_btn.setStyleSheet(_TEXT_BTN_BLUE)
-
-            def _do_save_cls(
-                _=False,
-                _pid=plugin_id,
-            ):
-                _persist_plugin_class_overrides(_pid)
-                try:
-                    notify_plugins_changed()
-                except (RuntimeError, OSError):
-                    logger.warning("Failed to notify plugin changes after class save", exc_info=True)
-
-            sv_btn.clicked.connect(_do_save_cls)
-            sv_row.addWidget(sv_btn)
-            wl.addLayout(sv_row)
             plugin_class_widgets[plugin_id] = (cw, classes, def_conf)
             return wrap, cw
 

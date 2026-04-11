@@ -38,12 +38,23 @@ class ToggleSwitch(QAbstractButton):
 
         self.toggled.connect(self._on_state_change)
 
+    def _thumb_pos_for_state(self, checked: bool) -> int:
+        return (self._pad + self._w - self._h + 3) if checked else (self._pad + 3)
+
     def _on_state_change(self, state):
         self.animation.stop()
         self.animation.setStartValue(self._circle_position)
-        end = (self._pad + self._w - self._h + 3) if state else (self._pad + 3)
+        end = self._thumb_pos_for_state(bool(state))
         self.animation.setEndValue(end)
         self.animation.start()
+
+    def setChecked(self, checked):
+        prev = self.isChecked()
+        super().setChecked(checked)
+        # If signals are blocked, `toggled` will not fire, so keep the thumb in sync.
+        if self.signalsBlocked() and prev != bool(checked):
+            self.animation.stop()
+            self.set_circle_position(self._thumb_pos_for_state(bool(checked)))
 
     def get_circle_position(self):
         return self._circle_position

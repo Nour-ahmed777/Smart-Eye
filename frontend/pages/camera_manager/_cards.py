@@ -177,6 +177,10 @@ class CameraCard(QFrame):
 
         left_layout, info, pills, right = build_roster_card_layout(self, pills_slot_width=SIZE_PANEL_W_MD)
         left_layout.addWidget(CardPreviewWidget(cam["id"], enabled))
+        pills_wrap = pills.parentWidget()
+        if pills_wrap is not None:
+            pills_wrap.setFixedWidth(0)
+            pills_wrap.hide()
 
         full_name = str(cam.get("name", "") or "")
         name_lbl = QLabel(full_name)
@@ -191,16 +195,18 @@ class CameraCard(QFrame):
         info.setSpacing(SPACE_XS)
         info.addWidget(name_lbl)
 
-        pills.setSpacing(SPACE_6)
-        pills.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        right_pills: list[QLabel] = []
         if enabled:
-            pills.addWidget(_pill("LIVE", _SUCCESS, _SUCCESS_BG_14))
+            right_pills.append(_pill("LIVE", _SUCCESS, _SUCCESS_BG_14))
         else:
-            pills.addWidget(_pill("OFF", _TEXT_MUTED, _MUTED_BG_10))
+            right_pills.append(_pill("OFF", _TEXT_MUTED, _MUTED_BG_10))
         if face_on:
-            pills.addWidget(_pill("FACE", _ACCENT_HI, _ACCENT_BG_12))
+            right_pills.append(_pill("FACE", _ACCENT_HI, _ACCENT_BG_12))
         if plugins:
-            pills.addWidget(_pill(f"{len(plugins)} plugin{'s' if len(plugins) != 1 else ''}", _ACCENT_HI, _ACCENT_BG_12))
+            right_pills.append(_pill(f"{len(plugins)} plugin{'s' if len(plugins) != 1 else ''}", _ACCENT_HI, _ACCENT_BG_12))
+
+        for pill in right_pills:
+            right.addWidget(pill)
 
         toggle = ToggleSwitch(width=SIZE_CONTROL_MID, height=SIZE_CONTROL_22)
         toggle.setChecked(enabled)

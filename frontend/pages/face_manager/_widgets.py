@@ -81,6 +81,10 @@ class RosterRowWidget(QFrame):
 
         apply_roster_card_style(self, "RosterCard", is_active)
         left_layout, info_col, pills, right = build_roster_card_layout(self, pills_slot_width=SIZE_PANEL_W_MD)
+        pills_wrap = pills.parentWidget()
+        if pills_wrap is not None:
+            pills_wrap.setFixedWidth(0)
+            pills_wrap.hide()
 
         avatar = QLabel()
 
@@ -131,14 +135,12 @@ class RosterRowWidget(QFrame):
                 border: none; border-radius: {RADIUS_LG}px;
                 padding: 0 {SPACE_SM}px; font-size: {FONT_SIZE_MICRO}px; font-weight: {FONT_WEIGHT_BOLD};
             """)
-        pills.setSpacing(SPACE_6)
-        pills.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         if is_authorized:
             status_pill.setText("AUTH")
         else:
             status_pill.setText("REST")
         status_pill.setFixedWidth(SIZE_BTN_W_62)
-        pills.addWidget(status_pill)
+        right.addWidget(status_pill)
 
         uid = str(face.get("uuid") or "")
         uid_pill = QLabel(f"{uid[:6] if uid else '------'}")
@@ -151,7 +153,7 @@ class RosterRowWidget(QFrame):
             font-family: 'JetBrains Mono', 'Consolas', monospace;
         """)
         uid_pill.setFixedWidth(SIZE_BTN_W_62)
-        pills.addWidget(uid_pill)
+        right.addWidget(uid_pill)
 
         toggle = ToggleSwitch(width=SIZE_CONTROL_MID, height=SIZE_CONTROL_22)
         toggle.setChecked(is_enabled)

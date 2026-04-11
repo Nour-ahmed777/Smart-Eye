@@ -978,6 +978,17 @@ class ModelsPage(QWidget):
                 f"color: {_TEXT_PRI}; font-size: {FONT_SIZE_BODY}px; font-weight: {FONT_WEIGHT_BOLD}; background: transparent;"
             )
             rl.addWidget(name_lbl, stretch=1)
+
+            pid, pname = p["id"], p.get("name", "")
+            plugin_enabled = bool(p.get("enabled", 1))
+            plugin_toggle = ToggleSwitch(active_color=_ACCENT)
+            plugin_toggle.blockSignals(True)
+            plugin_toggle.setChecked(plugin_enabled)
+            plugin_toggle.blockSignals(False)
+            plugin_toggle.setToolTip("Enable/disable this plugin globally")
+            plugin_toggle.toggled.connect(lambda checked, _pid=pid: self._set_plugin_enabled(_pid, checked))
+            rl.addWidget(plugin_toggle)
+
             weight_lbl = QLabel(os.path.basename(p.get("weights_path", "") or ""))
             weight_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_CAPTION) + " background: transparent;")
             rl.addWidget(weight_lbl)
@@ -995,7 +1006,6 @@ class ModelsPage(QWidget):
             del_btn.setFixedHeight(SIZE_ITEM_SM)
             del_btn.setFixedWidth(SIZE_BTN_W_72)
             del_btn.setStyleSheet(_RED_TXT_BTN)
-            pid, pname = p["id"], p.get("name", "")
             del_btn.clicked.connect(lambda _c, _pid=pid, _pname=pname: self._do_delete_plugin(_pid, _pname))
             rl.addWidget(del_btn)
             self._plugins_vbox.addWidget(row_w)
@@ -1047,6 +1057,20 @@ class ModelsPage(QWidget):
                     swatch.clicked.connect(_pick)
                     crl.addWidget(swatch)
 
+                    cls_toggle = ToggleSwitch(active_color=_ACCENT)
+                    cls_toggle.blockSignals(True)
+                    cls_toggle.setChecked(bool(cls.get("enabled", 1)))
+                    cls_toggle.blockSignals(False)
+                    cls_toggle.setEnabled(plugin_enabled)
+                    cls_toggle.setToolTip("Enable/disable this class globally")
+                    _cls_id = cls["id"]
+                    cls_toggle.toggled.connect(
+                        lambda checked, _plugin_id=pid, _class_id=_cls_id: self._set_plugin_class_enabled(
+                            _plugin_id, _class_id, checked
+                        )
+                    )
+                    crl.addWidget(cls_toggle)
+
                     name_lbl = QLabel(cls["class_name"])
                     name_lbl.setStyleSheet(text_style(_TEXT_PRI, size=FONT_SIZE_LABEL, extra="background: transparent;"))
                     crl.addWidget(name_lbl, stretch=1)
@@ -1064,6 +1088,8 @@ class ModelsPage(QWidget):
                         notify_plugins_changed()
 
                     reset_btn.clicked.connect(_reset)
+                    swatch.setEnabled(plugin_enabled)
+                    reset_btn.setEnabled(plugin_enabled)
                     crl.addWidget(reset_btn)
                     self._plugins_vbox.addWidget(cls_row)
 
@@ -1071,6 +1097,34 @@ class ModelsPage(QWidget):
             spacer.setFixedHeight(SPACE_6)
             spacer.setStyleSheet("background: transparent; border: none;")
             self._plugins_vbox.addWidget(spacer)
+
+    def _set_plugin_enabled(self, plugin_id: int, enabled: bool) -> None:
+        try:
+            db.update_plugin(plugin_id, enabled=1 if enabled else 0)
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
+            logger.exception("Failed to update plugin enabled state plugin_id=%s", plugin_id)
+            QMessageBox.critical(self, "Error", f"Failed to update plugin state:\n{exc}")
+            return
+        mgr = get_manager()
+        if mgr:
+            mgr.invalidate_camera_cache()
+            mgr.reload()
+        notify_plugins_changed()
+        # Defer list rebuild so the switch thumb animation can complete.
+        QTimer.singleShot(220, self._refresh_plugin_list)
+
+    def _set_plugin_class_enabled(self, plugin_id: int, class_id: int, enabled: bool) -> None:
+        try:
+            db.update_plugin_class(class_id, enabled=1 if enabled else 0)
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
+            logger.exception("Failed to update class enabled state class_id=%s", class_id)
+            QMessageBox.critical(self, "Error", f"Failed to update class state:\n{exc}")
+            return
+        mgr = get_manager()
+        if mgr:
+            mgr.invalidate_camera_cache()
+            mgr.reload()
+        notify_plugins_changed()
 
     def _do_delete_plugin(self, plugin_id: int, plugin_name: str) -> None:
         resp = QMessageBox.question(
