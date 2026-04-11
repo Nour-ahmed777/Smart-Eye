@@ -1,15 +1,17 @@
 import json
-import os
-import time
 import logging
+import os
+import queue
+import threading
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
 from PySide6.QtMultimedia import QSoundEffect
 
-from backend.repository import db
 from backend.notifications.email_notifier import send_email_alert
 from backend.notifications.webhook_notifier import send_webhook
+from backend.repository import db
 from utils import config
 from utils.image_utils import save_snapshot
 
@@ -20,22 +22,67 @@ class AlarmHandler:
         self._log = logging.getLogger(__name__)
 
         self._alarm = QSoundEffect()
-
         self._alarm.setLoopCount(-2)
         self._alarm.setVolume(0.8)
-
         self._alarm_playing = False
         self._last_trigger_ts = 0.0
         self._alarm_grace_seconds = 0.35
-
         self._last_action_times = {}
-
         self._last_log_ts: dict = {}
+
+        self._task_queue: queue.Queue = queue.Queue(maxsize=512)
+        self._stop_event = threading.Event()
+        self._worker = threading.Thread(target=self._worker_loop, name="alarm-worker", daemon=True)
+        self._worker.start()
+
+    def close(self):
+        self._stop_event.set()
+        try:
+            self._task_queue.put_nowait(None)
+        except Exception:
+            pass
+        try:
+            if self._worker.is_alive():
+                self._worker.join(timeout=1.5)
+        except Exception:
+            pass
+
+    def _enqueue(self, task):
+        if self._stop_event.is_set():
+            return
+        try:
+            self._task_queue.put_nowait(task)
+        except queue.Full:
+
+            try:
+                self._task_queue.get_nowait()
+            except Exception:
+                pass
+            try:
+                self._task_queue.put_nowait(task)
+            except Exception:
+                self._log.warning("Alarm worker queue full; dropping task")
+
+    def _worker_loop(self):
+        while not self._stop_event.is_set():
+            try:
+                task = self._task_queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            if task is None:
+                break
+            try:
+                kind = task.get("kind")
+                if kind == "action":
+                    self._execute_action(task["action"], task["state"], task.get("frame"))
+                elif kind == "log":
+                    self._write_detection_log(task["rule"], task["level"], task["state"], task.get("frame"))
+            except Exception:
+                self._log.exception("Alarm worker task failed")
 
     def handle_alarms(self, triggered_rules, escalation_levels, state, frame=None):
         now = time.time()
         should_play_alarm = False
-
         executed = []
         for rule in triggered_rules:
             if not rule.get("enabled", 1):
@@ -53,7 +100,8 @@ class AlarmHandler:
                 last = self._last_action_times.get(key, 0)
                 if now - last < cooldown:
                     continue
-                self._execute_action(action, state, frame)
+                action_frame = frame.copy() if frame is not None else None
+                self._enqueue({"kind": "action", "action": dict(action), "state": dict(state), "frame": action_frame})
                 self._last_action_times[key] = now
                 executed.append(action)
 
@@ -61,23 +109,8 @@ class AlarmHandler:
             if now - self._last_log_ts.get(log_key, 0) < 30.0:
                 continue
             self._last_log_ts[log_key] = now
-
-            snapshot_path = ""
-            if frame is not None and config.snapshot_on_alarm():
-                snapshot_path = save_snapshot(
-                    frame,
-                    Path(self._data_dir) / "snapshots",
-                )
-            db.add_detection_log(
-                camera_id=state.get("camera_id"),
-                zone_id=state.get("zone_id"),
-                identity=state.get("identity"),
-                face_confidence=state.get("face_confidence", 0),
-                detections=state.get("detections", {}),
-                rules_triggered=[rule["name"]],
-                alarm_level=level,
-                snapshot_path=snapshot_path,
-            )
+            log_frame = frame.copy() if frame is not None and config.snapshot_on_alarm() else None
+            self._enqueue({"kind": "log", "rule": dict(rule), "level": level, "state": dict(state), "frame": log_frame})
 
         if should_play_alarm:
             self._last_trigger_ts = now
@@ -89,15 +122,31 @@ class AlarmHandler:
 
         return executed
 
+    def _write_detection_log(self, rule, level, state, frame):
+        snapshot_path = ""
+        if frame is not None:
+            snapshot_path = save_snapshot(
+                frame,
+                Path(self._data_dir) / "snapshots",
+            )
+        db.add_detection_log(
+            camera_id=state.get("camera_id"),
+            zone_id=state.get("zone_id"),
+            identity=state.get("identity"),
+            face_confidence=state.get("face_confidence", 0),
+            detections=state.get("detections", {}),
+            rules_triggered=[rule.get("name")],
+            alarm_level=level,
+            snapshot_path=snapshot_path,
+        )
+
     def _execute_action(self, action, state, frame):
         atype = action["action_type"]
         avalue = action.get("action_value", "")
-
         if atype == "email":
             self._send_email(avalue, state)
         elif atype == "webhook":
             self._send_webhook(avalue, state)
-
         return False
 
     def _start_alarm(self):
@@ -107,7 +156,6 @@ class AlarmHandler:
         if not sound_path.is_file():
             self._log.warning("Alarm sound not found: %s", sound_path)
             return
-
         if os.name == "nt":
             try:
                 import winsound
@@ -121,7 +169,6 @@ class AlarmHandler:
                 return
             except Exception:
                 self._log.exception("winsound start failed; falling back to QSoundEffect")
-
         if self._alarm is None:
             return
         self._alarm.setSource(QUrl.fromLocalFile(str(sound_path)))
@@ -186,8 +233,18 @@ def get_handler(data_dir="data"):
             _instance._last_trigger_ts = 0.0
             _instance._alarm_grace_seconds = 2.0
             _instance._last_action_times = {}
+            _instance._last_log_ts = {}
+            _instance._task_queue = queue.Queue(maxsize=16)
+            _instance._worker = threading.Thread(target=lambda: None, daemon=True)
+            _instance._stop_event = threading.Event()
     return _instance
 
 
 def stop_all_sounds():
-    get_handler()._stop_alarm()
+    handler = get_handler()
+    with_logging = getattr(handler, "_stop_alarm", None)
+    if callable(with_logging):
+        handler._stop_alarm()
+    close_fn = getattr(handler, "close", None)
+    if callable(close_fn):
+        close_fn()

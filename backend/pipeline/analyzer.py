@@ -138,13 +138,15 @@ def merge_results(detection_results, camera_id, zone_info=None):
             obj_entry["bbox_color"] = color
         state["object_bboxes"].append(obj_entry)
 
-    for go in detection_results.get("ghost_objects", []):
-        if go.get("bbox"):
-            go_entry = {**go, "ghost": True}
-            color = class_colors.get(go.get("class_name", ""), "")
-            if color:
-                go_entry["bbox_color"] = color
-            state["object_bboxes"].append(go_entry)
+    show_ghost_objects = bool(db.get_bool("render_ghost_object_bboxes", False))
+    if show_ghost_objects:
+        for go in detection_results.get("ghost_objects", []):
+            if go.get("bbox"):
+                go_entry = {**go, "ghost": True}
+                color = class_colors.get(go.get("class_name", ""), "")
+                if color:
+                    go_entry["bbox_color"] = color
+                state["object_bboxes"].append(go_entry)
 
     plugin_classes = _get_plugin_classes_cached(enabled_only=True)
     for pc in plugin_classes:

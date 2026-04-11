@@ -1,11 +1,39 @@
+import threading
+import time
+
 from backend.repository import db
+
+_ZONE_CACHE: dict[int, tuple[float, list[dict]]] = {}
+_ZONE_CACHE_LOCK = threading.Lock()
+_ZONE_CACHE_TTL_SEC = 2.0
+
+
+def invalidate_zone_cache(camera_id=None):
+    with _ZONE_CACHE_LOCK:
+        if camera_id is None:
+            _ZONE_CACHE.clear()
+        else:
+            _ZONE_CACHE.pop(int(camera_id), None)
+
+
+def _get_zones_cached(camera_id):
+    cid = int(camera_id)
+    now = time.time()
+    with _ZONE_CACHE_LOCK:
+        entry = _ZONE_CACHE.get(cid)
+        if entry and (now - entry[0]) < _ZONE_CACHE_TTL_SEC:
+            return entry[1]
+    try:
+        zones = db.get_zones(camera_id=cid, enabled_only=True)
+    except Exception:
+        zones = []
+    with _ZONE_CACHE_LOCK:
+        _ZONE_CACHE[cid] = (now, zones)
+    return zones
 
 
 def filter_detections_by_zone(detection_results, camera_id, frame_w, frame_h):
-    try:
-        zones = db.get_zones(camera_id=camera_id, enabled_only=True)
-    except Exception:
-        return [{"zone": None, "results": detection_results}]
+    zones = _get_zones_cached(camera_id)
     if not zones:
         return [{"zone": None, "results": detection_results}]
 
@@ -19,44 +47,39 @@ def filter_detections_by_zone(detection_results, camera_id, frame_w, frame_h):
         zy2 = zone["y2"] * frame_h
         return zx1 <= cx <= zx2 and zy1 <= cy <= zy2
 
-    def _filter_by_zone(entries, zone):
-        out = []
+    def _split_by_zone(entries):
+        in_zone = {z["id"]: [] for z in zones}
+        unzoned = []
         for ent in entries:
             bbox = ent.get("bbox")
             if not bbox:
                 continue
-            if _center_in_zone(bbox, zone):
-                out.append(ent)
-        return out
+            matched = False
+            for z in zones:
+                if _center_in_zone(bbox, z):
+                    in_zone[z["id"]].append(ent)
+                    matched = True
+            if not matched:
+                unzoned.append(ent)
+        return in_zone, unzoned
+
+    objects_by_zone, unzoned_objects = _split_by_zone(detection_results.get("objects", []))
+    faces_by_zone, unzoned_faces = _split_by_zone(detection_results.get("faces", []))
 
     zone_results = []
     for zone in zones:
-        filtered_objects = _filter_by_zone(detection_results.get("objects", []), zone)
-        filtered_faces = _filter_by_zone(detection_results.get("faces", []), zone)
+        zid = zone["id"]
         zone_result = {
             "zone": zone,
             "results": {
-                "faces": filtered_faces,
-                "objects": filtered_objects,
+                "faces": faces_by_zone.get(zid, []),
+                "objects": objects_by_zone.get(zid, []),
                 "face_time_ms": detection_results.get("face_time_ms", 0),
                 "object_time_ms": detection_results.get("object_time_ms", 0),
             },
         }
         zone_results.append(zone_result)
 
-    def _not_in_any(entries):
-        out = []
-        for ent in entries:
-            bbox = ent.get("bbox")
-            if not bbox:
-                continue
-            if any(_center_in_zone(bbox, z) for z in zones):
-                continue
-            out.append(ent)
-        return out
-
-    unzoned_faces = _not_in_any(detection_results.get("faces", []))
-    unzoned_objects = _not_in_any(detection_results.get("objects", []))
     if unzoned_faces or unzoned_objects:
         zone_results.append(
             {

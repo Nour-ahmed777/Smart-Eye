@@ -52,7 +52,7 @@ def _iou(a, b):
         return 0.0
 
 
-def _smooth_bbox(prev, curr, alpha=0.6):
+def _smooth_bbox(prev, curr, alpha=0.6, max_scale_change=0.12):
     try:
         if not prev or not curr:
             return curr
@@ -72,8 +72,7 @@ def _smooth_bbox(prev, curr, alpha=0.6):
         ch = max(1.0, cy2 - cy1)
 
         alpha_pos = float(alpha)
-
-        alpha_size = min(0.95, alpha_pos + 0.2)
+        alpha_size = min(0.82, max(0.55, alpha_pos * 0.78))
 
         ncx = alpha_pos * ccx + (1.0 - alpha_pos) * pcx
         ncy = alpha_pos * ccy + (1.0 - alpha_pos) * pcy
@@ -81,7 +80,6 @@ def _smooth_bbox(prev, curr, alpha=0.6):
         nw = alpha_size * cw + (1.0 - alpha_size) * pw
         nh = alpha_size * ch + (1.0 - alpha_size) * ph
 
-        max_scale_change = 0.25
         min_w = pw * (1.0 - max_scale_change)
         max_w = pw * (1.0 + max_scale_change)
         min_h = ph * (1.0 - max_scale_change)
@@ -563,9 +561,10 @@ class DetectorManager:
 
     def _collect_futures(self, futures):
         faces, objects, face_ms, obj_ms = [], [], 0.0, 0.0
+        timeout_s = 30.0
         for key, fut in futures.items():
             try:
-                data, ms = fut.result(timeout=30)
+                data, ms = fut.result(timeout=timeout_s)
                 if key == "faces":
                     faces = data
                     face_ms = ms

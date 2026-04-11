@@ -1,4 +1,7 @@
 import collections
+import contextlib
+import json
+import ast
 import logging
 import os
 import time
@@ -10,8 +13,8 @@ from PySide6.QtCore import QMutex, QThread, Signal
 
 from backend.pipeline.detector_manager import get_manager
 from backend.pipeline.inference_utils import build_state
-from backend.services.pipeline_service import PipelineService
 from backend.repository import db
+from backend.services.pipeline_service import PipelineService
 
 
 class PlaybackThread(QThread):
@@ -35,6 +38,8 @@ class PlaybackThread(QThread):
         self._total_frames = 0
         self._detection_events = []
         self._detection_enabled = False
+        self._face_detection_enabled = True
+        self._disabled_object_classes: set[str] = set()
         self._record_enabled = False
         self._frame_buffer: collections.deque = collections.deque()
         self._video_fps_actual: float = 30.0
@@ -44,12 +49,31 @@ class PlaybackThread(QThread):
             self._infer_target_fps = 12.0
         self._infer_target_fps = max(1.0, min(30.0, self._infer_target_fps))
 
+        try:
+            self._face_detection_enabled = bool(db.get_bool("playback_face_detection_enabled", True))
+        except Exception:
+            self._face_detection_enabled = True
+        try:
+            raw = db.get_setting("playback_disabled_object_classes", "[]")
+            if isinstance(raw, str):
+                try:
+                    parsed = json.loads(raw or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    parsed = ast.literal_eval(raw) if raw else []
+            else:
+                parsed = raw or []
+            self._disabled_object_classes = {str(v).strip().lower() for v in parsed if str(v).strip()}
+        except Exception:
+            self._disabled_object_classes = set()
+
     @property
     def camera_id(self):
         return self._camera_id
 
     def run(self):
         self._running = True
+        with contextlib.suppress(Exception):
+            get_manager().clear_camera_state(self._camera_id)
         self._cap = cv2.VideoCapture(self._video_path)
         if not self._cap.isOpened():
             logging.getLogger(__name__).warning("Playback: failed to open video %s", self._video_path)
@@ -80,6 +104,20 @@ class PlaybackThread(QThread):
 
         def _evaluate_frame(frame, w, h, infer_idx):
             detection_results = detector.process_frame(frame, self._camera_id)
+            if not self._face_detection_enabled:
+                detection_results["faces"] = []
+                detection_results["ghost_faces"] = []
+            if self._disabled_object_classes:
+                detection_results["objects"] = [
+                    o
+                    for o in detection_results.get("objects", [])
+                    if str(o.get("class_name") or o.get("class") or "").strip().lower() not in self._disabled_object_classes
+                ]
+                detection_results["ghost_objects"] = [
+                    o
+                    for o in detection_results.get("ghost_objects", [])
+                    if str(o.get("class_name") or o.get("class") or "").strip().lower() not in self._disabled_object_classes
+                ]
             primary, triggered = build_state(detection_results, self._camera_id, w, h)
             return infer_idx, frame, w, h, primary, triggered
 
@@ -126,6 +164,11 @@ class PlaybackThread(QThread):
                 frame_idx = self._seek_frame
                 self._seek_frame = -1
                 force_read = True
+                if pending_future is not None and not pending_future.done():
+                    pending_future.cancel()
+                pending_future = None
+                last_detect_state = {"triggered_rules": [], "frame_index": frame_idx}
+                last_detect_frame_idx = -1
             if self._paused and not force_read:
                 time.sleep(0.05)
                 continue
@@ -217,6 +260,8 @@ class PlaybackThread(QThread):
         if pending_future is not None and not pending_future.done():
             pending_future.cancel()
         infer_executor.shutdown(wait=False)
+        with contextlib.suppress(Exception):
+            detector.clear_camera_state(self._camera_id)
         if self._cap:
             self._cap.release()
 
@@ -279,6 +324,12 @@ class PlaybackThread(QThread):
 
     def set_detection_enabled(self, enabled: bool):
         self._detection_enabled = enabled
+
+    def set_face_detection_enabled(self, enabled: bool):
+        self._face_detection_enabled = bool(enabled)
+
+    def set_disabled_object_classes(self, class_names: set[str] | list[str]):
+        self._disabled_object_classes = {str(v).strip().lower() for v in (class_names or set()) if str(v).strip()}
 
     def set_record_enabled(self, enabled: bool):
         self._record_enabled = enabled
