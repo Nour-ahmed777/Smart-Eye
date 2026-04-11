@@ -895,6 +895,7 @@ def add_known_face(
     phone="",
     email="",
     embedding_model="",
+    gender=None,
 ):
 
     try:
@@ -919,10 +920,11 @@ def add_known_face(
         raise ValueError(f"Invalid embedding_bytes for known face: {e}") from e
 
     row_uuid = external_uuid or str(uuid.uuid4())
+    gender_norm = _normalize_gender_value(gender)
     cur = _write_execute(
         """INSERT INTO known_faces
-           (uuid, name, role, department, address, country, birth_date, phone, email, embedding, image_path, authorized_cameras, liveness_required, embedding_model)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           (uuid, name, role, department, address, country, birth_date, phone, email, embedding, image_path, authorized_cameras, liveness_required, embedding_model, gender_norm)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             row_uuid,
             name,
@@ -938,6 +940,7 @@ def add_known_face(
             authorized_cameras,
             liveness_required,
             embedding_model or "",
+            gender_norm,
         ),
     )
     return cur.lastrowid
@@ -995,6 +998,7 @@ def update_known_face(face_id, **kwargs):
         "authorized_cameras",
         "liveness_required",
         "embedding_model",
+        "gender_norm",
         "enabled",
     }
     sets, vals = _build_update(allowed, kwargs)
@@ -1579,6 +1583,7 @@ def add_face(
     phone="",
     email="",
     embedding_model="",
+    gender=None,
 ):
     return add_known_face(
         name,
@@ -1595,6 +1600,7 @@ def add_face(
         phone=phone,
         email=email,
         embedding_model=embedding_model,
+        gender=gender,
     )
 
 

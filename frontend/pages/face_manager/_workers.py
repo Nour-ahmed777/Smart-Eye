@@ -18,6 +18,7 @@ class EnrollWorker(QThread):
         name: str,
         department: str,
         authorized: bool,
+        gender: str | None = None,
         address: str = "",
         country: str = "",
         birth_date: str = "",
@@ -30,6 +31,7 @@ class EnrollWorker(QThread):
         self._name = name
         self._department = department
         self._authorized = authorized
+        self._gender = gender
         self._address = address
         self._country = country
         self._birth_date = birth_date
@@ -106,6 +108,7 @@ class EnrollWorker(QThread):
                 phone=self._phone,
                 email=self._email,
                 embedding_model=getattr(model_loader.get_face_model(), "model_name", "") or "",
+                gender=self._gender,
             )
             self.done.emit(
                 True,

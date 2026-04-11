@@ -393,6 +393,7 @@ class FaceManagerPage(_EnrollPanelMixin, QWidget):
             embedding_bytes=emb_bytes,
             image_path=face.get("image_path", ""),
             embedding_model=emb_model,
+            gender="unknown",
         )
         db.delete_face_inbox(face.get("id"))
         with contextlib.suppress(Exception):

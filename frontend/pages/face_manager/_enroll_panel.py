@@ -8,6 +8,7 @@ from PySide6.QtGui import QFont, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QComboBox,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -233,6 +234,12 @@ class _EnrollPanelMixin:
         ]:
             fields_layout.addWidget(_add_field(lbl_text, widget))
 
+        # Gender selection
+        self._ef_gender = QComboBox()
+        self._ef_gender.addItems(["Unknown", "Male", "Female"])
+        self._ef_gender.setCurrentIndex(0)
+        fields_layout.addWidget(_add_field("Gender", self._ef_gender))
+
         access_row = QWidget()
         access_row.setFixedHeight(SIZE_ROW_MD)
         access_row.setStyleSheet("background: transparent; border: none;")
@@ -365,6 +372,7 @@ class _EnrollPanelMixin:
             name,
             self._ef_dept.text().strip(),
             self._ef_auth.isChecked(),
+            gender=self._ef_gender.currentText().strip(),
             address=self._ef_address.text().strip(),
             country=self._ef_country.text().strip(),
             birth_date=self._ef_birth.text().strip(),

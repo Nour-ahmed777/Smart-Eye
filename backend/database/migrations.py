@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 
-CURRENT_VERSION = 21
+CURRENT_VERSION = 22
 
 
 def apply(conn):
@@ -53,7 +53,19 @@ def apply(conn):
         _migrate_v20(conn)
     if version < 21:
         _migrate_v21(conn)
+    if version < 22:
+        _migrate_v22(conn)
     conn.execute(f"PRAGMA user_version = {CURRENT_VERSION}")
+    conn.commit()
+
+
+def _migrate_v22(conn):
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    if "known_faces" in tables:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(known_faces)").fetchall()]
+        if "gender_norm" not in cols:
+            conn.execute("ALTER TABLE known_faces ADD COLUMN gender_norm TEXT DEFAULT 'unknown'")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_known_faces_gender_norm ON known_faces (gender_norm)")
     conn.commit()
 
 

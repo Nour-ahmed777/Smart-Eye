@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS known_faces (
     embedding_model TEXT DEFAULT '',
     authorized_cameras  TEXT DEFAULT '[]',
     liveness_required   INTEGER DEFAULT 0,
+    gender_norm         TEXT DEFAULT 'unknown',
     enabled             INTEGER DEFAULT 1,
     added_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 );
