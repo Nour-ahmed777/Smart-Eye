@@ -127,7 +127,8 @@ def main():
 
         apply_limits(
             db.get_bool("limit_resources", False),
-            db.get_int("max_threads", 2) or 2,
+            db.get_int("max_cpu_cores", db.get_int("max_threads", 2) or 2) or 2,
+            db.get_int("max_ram_mb", 4096) or 4096,
         )
     except Exception:
         pass

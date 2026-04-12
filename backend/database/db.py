@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import uuid
 import queue
+import time
 from datetime import datetime
 
 from utils.auth_validation import get_email_validation_error
@@ -345,6 +346,7 @@ def _row_to_account(row):
     return {
         "id": row["id"],
         "email": row["email"],
+        "username": row["username"] if "username" in row.keys() else "",
         "allowed_tabs": allowed,
         "is_admin": bool(row["is_admin"]),
         "created_at": row["created_at"],
@@ -381,7 +383,15 @@ def ensure_default_account():
         pass
 
 
-def create_account(email: str, password: str, allowed_tabs=None, is_admin: bool = False, security=None, avatar_path: str = ""):
+def create_account(
+    email: str,
+    password: str,
+    allowed_tabs=None,
+    is_admin: bool = False,
+    security=None,
+    avatar_path: str = "",
+    username: str = "",
+):
     err = get_email_validation_error(email, allow_internal=True)
     if err:
         raise ValueError(err)
@@ -399,11 +409,12 @@ def create_account(email: str, password: str, allowed_tabs=None, is_admin: bool 
     tabs = json.dumps(_normalize_tabs(allowed_tabs or []))
     cur = _write_execute(
         """INSERT INTO accounts
-        (email, password_hash, salt, allowed_tabs, is_admin,
+        (email, username, password_hash, salt, allowed_tabs, is_admin,
          sec_q1, sec_q2, sec_q3, sec_a1_hash, sec_a2_hash, sec_a3_hash, sec_salt, avatar_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             _normalize_email(email),
+            (username or "").strip(),
             pw_hash,
             salt,
             tabs,
@@ -421,7 +432,7 @@ def create_account(email: str, password: str, allowed_tabs=None, is_admin: bool 
     return cur.lastrowid
 
 
-def update_account(account_id: int, *, email=None, password=None, allowed_tabs=None, is_admin=None, security=None, avatar_path=None):
+def update_account(account_id: int, *, email=None, password=None, allowed_tabs=None, is_admin=None, security=None, avatar_path=None, username=None):
     current = get_account(account_id)
     sets = []
     vals = []
@@ -432,6 +443,9 @@ def update_account(account_id: int, *, email=None, password=None, allowed_tabs=N
             raise ValueError(err)
         sets.append("email=?")
         vals.append(_normalize_email(email))
+    if username is not None:
+        sets.append("username=?")
+        vals.append((username or "").strip())
     if password is not None:
         salt, pw_hash = _hash_password(password)
         sets.append("password_hash=?")
@@ -1708,22 +1722,41 @@ def get_db_path():
     return _DB_PATH
 
 
+def wait_for_writer_idle(timeout_sec: float = 5.0) -> bool:
+    deadline = time.time() + max(0.0, float(timeout_sec))
+    while time.time() < deadline:
+        pending = getattr(_write_queue, "unfinished_tasks", 0)
+        if pending <= 0:
+            return True
+        time.sleep(0.05)
+    return getattr(_write_queue, "unfinished_tasks", 0) <= 0
+
+
 def reset_database():
     schema_path = os.path.join(os.path.dirname(__file__), "schema.sql")
 
     _PRESERVE = {"app_settings", "accounts"}
 
     def _op(conn):
+        with contextlib.suppress(Exception):
+            conn.execute("PRAGMA busy_timeout = 5000")
         conn.execute("PRAGMA foreign_keys = OFF")
         conn.commit()
         tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
         for t in tables:
             if t["name"] in _PRESERVE:
                 continue
-            try:
-                conn.execute(f"DELETE FROM [{t['name']}]")
-            except Exception:
-                pass
+            last_exc = None
+            for _ in range(3):
+                try:
+                    conn.execute(f"DELETE FROM [{t['name']}]")
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    time.sleep(0.05)
+            if last_exc is not None:
+                raise last_exc
         conn.commit()
         conn.execute("PRAGMA foreign_keys = ON")
         conn.commit()

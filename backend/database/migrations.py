@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 
-CURRENT_VERSION = 24
+CURRENT_VERSION = 25
 
 
 def apply(conn):
@@ -59,7 +59,31 @@ def apply(conn):
         _migrate_v23(conn)
     if version < 24:
         _migrate_v24(conn)
+    if version < 25:
+        _migrate_v25(conn)
     conn.execute(f"PRAGMA user_version = {CURRENT_VERSION}")
+    conn.commit()
+
+
+def _migrate_v25(conn):
+    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+    if "accounts" in tables:
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(accounts)").fetchall()]
+        if "username" not in cols:
+            conn.execute("ALTER TABLE accounts ADD COLUMN username TEXT")
+    settings = [
+        ("max_cpu_cores", "2", "int", "Max CPU Cores", "performance"),
+        ("max_ram_mb", "4096", "int", "Max RAM (MB)", "performance"),
+    ]
+    for key, value, vtype, label, section in settings:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+            (key, value, vtype, label, section),
+        )
+        conn.execute(
+            "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+            (vtype, label, section, key),
+        )
     conn.commit()
 
 
