@@ -649,11 +649,18 @@ QSlider::handle:horizontal {{
             btn.setChecked(active)
             btn.setStyleSheet(_TAB_BTN_ACTIVE if active else _TAB_BTN)
         if key == "snapshots" and (self._snapshots_dirty or not self._snapshots_loaded):
-            self._refresh_snapshots_gallery()
+            if self._is_playback_running():
+                self._refresh_snapshots_gallery_quick()
+                self._snapshots_dirty = True
+            else:
+                QTimer.singleShot(0, self._refresh_snapshots_gallery)
         if self._media_open_folder_btn:
             self._media_open_folder_btn.setToolTip(
                 "Open Saved Clips Folder" if key == "clips" else "Open Snapshots Folder"
             )
+
+    def _is_playback_running(self) -> bool:
+        return bool(self._playback_thread and self._playback_thread.isRunning())
 
     def _open_active_media_folder(self) -> None:
         key = "clips"
@@ -706,7 +713,6 @@ QSlider::handle:horizontal {{
             os.startfile(path)  # type: ignore[attr-defined]
         except Exception:
             logger.debug("Could not open snapshot with default viewer path=%s", path, exc_info=True)
-        self._clip_status.setText(f"Snapshot: {os.path.basename(path)}")
 
     def _on_snapshot_item_activated(self, item) -> None:
         path = item.data(Qt.ItemDataRole.UserRole)
@@ -717,15 +723,35 @@ QSlider::handle:horizontal {{
             card.set_active(it is current)
 
     def _delete_snapshot(self, path: str) -> None:
+        deleted = False
         try:
             if path and os.path.exists(path):
                 os.remove(path)
-                self._clip_status.setText(f"Deleted snapshot: {os.path.basename(path)}")
-            else:
-                self._clip_status.setText("Snapshot file not found")
+                deleted = True
         except OSError as e:
             self._clip_status.setText(f"Delete failed: {e}")
-        self._refresh_snapshots_gallery()
+            return
+
+        if self._snapshots_list:
+            removed_row = -1
+            removed_pair = None
+            for idx, (item, card) in enumerate(self._snapshot_cards):
+                item_path = item.data(Qt.ItemDataRole.UserRole)
+                if item_path == path:
+                    removed_row = self._snapshots_list.row(item)
+                    removed_pair = (item, card)
+                    break
+            if removed_row >= 0:
+                taken = self._snapshots_list.takeItem(removed_row)
+                if taken is not None:
+                    del taken
+                if removed_pair is not None:
+                    self._snapshot_cards.remove(removed_pair)
+
+        # Mark stale so a future snapshots-tab visit can fully reconcile with DB records.
+        self._snapshots_dirty = True
+        if not deleted:
+            logger.debug("Snapshot file already missing path=%s", path)
 
     def _refresh_snapshots_gallery(self) -> None:
         if not self._snapshots_list:
@@ -773,6 +799,44 @@ QSlider::handle:horizontal {{
             self._snapshot_cards.append((item, row_w))
             if selected_item is None:
                 selected_item = item
+        if selected_item:
+            self._snapshots_list.setCurrentItem(selected_item)
+        self._sync_snapshot_card_selection(self._snapshots_list.currentItem(), None)
+
+    def _refresh_snapshots_gallery_quick(self) -> None:
+        if not self._snapshots_list:
+            return
+        if self._snapshot_cards:
+            return
+        self._snapshots_list.clear()
+        self._snapshot_cards.clear()
+        if not os.path.isdir("data/snapshots"):
+            return
+
+        rows: list[tuple[str, int]] = []
+        try:
+            for name in os.listdir("data/snapshots"):
+                p = os.path.join("data/snapshots", name)
+                if os.path.isfile(p) and name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
+                    rows.append((p, int(os.path.getmtime(p) or 0)))
+        except OSError:
+            logger.debug("Failed quick snapshot listing", exc_info=True)
+            return
+
+        selected_item = None
+        for path, ts in sorted(rows, key=lambda kv: kv[1], reverse=True)[:120]:
+            item = QListWidgetItem()
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            row_w = SnapshotRowWidget(path, ts, camera_name="Snapshot", rule_text="No rule context")
+            item.setSizeHint(QSize(0, row_w.height()))
+            row_w.selected.connect(lambda lw=self._snapshots_list, it=item: lw.setCurrentItem(it))
+            row_w.delete_requested.connect(lambda p=path: self._delete_snapshot(p))
+            self._snapshots_list.addItem(item)
+            self._snapshots_list.setItemWidget(item, row_w)
+            self._snapshot_cards.append((item, row_w))
+            if selected_item is None:
+                selected_item = item
+
         if selected_item:
             self._snapshots_list.setCurrentItem(selected_item)
         self._sync_snapshot_card_selection(self._snapshots_list.currentItem(), None)
@@ -889,6 +953,8 @@ QSlider::handle:horizontal {{
 
     def _on_finished(self, camera_id=None) -> None:
         self._sync_play_button(paused=True)
+        if self._active_media_tab == "snapshots" and self._snapshots_dirty:
+            QTimer.singleShot(0, self._refresh_snapshots_gallery)
 
     def _toggle_play(self) -> None:
         if self._playback_thread is None:

@@ -356,6 +356,7 @@ class DetectorManager:
                 if cp:
                     self._camera_plugins[camera_id] = [p["id"] for p in cp]
                 else:
+                    # No explicit camera assignment: use currently loaded enabled plugins.
                     with self._plugin_models_lock:
                         self._camera_plugins[camera_id] = list(self._plugin_models.keys())
             return list(self._camera_plugins[camera_id])
