@@ -59,10 +59,9 @@ jobs:
       - name: Remove duplicate insightface mesh cython
         shell: pwsh
         run: |
-          $pattern = "C:/hostedtoolcache/windows/Python/3.12.*/x64/insightface/thirdparty/face3d/mesh/cython"
-          $matches = Get-ChildItem -Path "C:/hostedtoolcache/windows/Python/3.12.*/x64/insightface/thirdparty/face3d/mesh/cython" -Directory -ErrorAction SilentlyContinue
-          if ($matches) {
-            foreach ($dir in $matches) {
+          $found = Get-ChildItem -Path "C:/hostedtoolcache/windows/Python/3.12.*/x64/insightface/thirdparty/face3d/mesh/cython" -Directory -ErrorAction SilentlyContinue
+          if ($found) {
+            foreach ($dir in $found) {
               Write-Host "Removing duplicate: $($dir.FullName)"
               Remove-Item -Recurse -Force $dir.FullName
             }
@@ -166,19 +165,25 @@ jobs:
           "dist_mb=$mb" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Dist size: ${mb}MB"
 
-      - name: Create zip artifact
+      - name: Create 7z artifact
         id: package
         shell: pwsh
         run: |
           $version = "${{ steps.appinfo.outputs.app_version }}"
-          $archiveName = "SmartEye-v$version-main-dist.zip"
+          $archiveName = "SmartEye-v$version-main-dist.7z"
           $archive = Join-Path $PWD "build\$archiveName"
 
           if (Test-Path $archive) {
             Remove-Item -Force $archive
           }
 
-          Compress-Archive -Path "${{ steps.verify.outputs.dist_dir }}\*" -DestinationPath $archive -CompressionLevel Optimal
+          $distDir = "${{ steps.verify.outputs.dist_dir }}"
+          & "C:\Program Files\7-Zip\7z.exe" a -t7z -m0=lzma2 -mx=9 -mmt=on -ms=on "$archive" "$distDir\*"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "7-Zip compression failed with exit code $LASTEXITCODE"
+          }
+
           "archive_name=$archiveName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "artifact_path=$archive" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 

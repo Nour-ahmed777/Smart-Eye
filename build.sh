@@ -190,12 +190,32 @@ if [[ -f "$EXE" ]]; then
     fi
     info "Dist size  : ${DIST_MB} MB (limit: ${MAX_DIST_MB} MB)"
     info "Version    : v${APP_VERSION}"
+    echo ""
 
-    ARCHIVE_NAME="SmartEye-v${APP_VERSION}-main-dist.zip"
-    read -rp "Create zip archive '$ARCHIVE_NAME'? [y/N] " zip_ans
+    ARCHIVE_NAME="SmartEye-v${APP_VERSION}-main-dist.7z"
+    read -rp "Create 7z archive '$ARCHIVE_NAME'? [y/N] " zip_ans
     if [[ "${zip_ans,,}" == "y" ]]; then
-        (cd "$DIST_DIR" && zip -r "$OUT_DIR/$ARCHIVE_NAME" .)
-        info "Archive created: $OUT_DIR/$ARCHIVE_NAME"
+        SEVENZIP=""
+        for candidate in \
+            "/c/Program Files/7-Zip/7z.exe" \
+            "/c/Program Files (x86)/7-Zip/7z.exe" \
+            "$(command -v 7z 2>/dev/null || true)" \
+            "$(command -v 7za 2>/dev/null || true)"; do
+            if [[ -n "$candidate" && -x "$candidate" ]]; then
+                SEVENZIP="$candidate"
+                break
+            fi
+        done
+
+        if [[ -n "$SEVENZIP" ]]; then
+            "$SEVENZIP" a -t7z -m0=lzma2 -mx=9 -mmt=on -ms=on "$OUT_DIR/$ARCHIVE_NAME" "$DIST_DIR/"*
+            info "Archive created: $OUT_DIR/$ARCHIVE_NAME"
+        else
+            warn "7-Zip not found, falling back to zip..."
+            ARCHIVE_NAME="SmartEye-v${APP_VERSION}-main-dist.zip"
+            (cd "$DIST_DIR" && zip -r "$OUT_DIR/$ARCHIVE_NAME" .)
+            info "Archive created: $OUT_DIR/$ARCHIVE_NAME"
+        fi
     fi
     echo ""
 
