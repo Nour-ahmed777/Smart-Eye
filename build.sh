@@ -8,7 +8,7 @@ ENTRY="$ROOT/main.py"
 OUT_DIR="$ROOT/build"
 DIST_NAME="SmartEye"
 
-JOBS="${SMARTEYE_JOBS:-2}"
+JOBS="${SMARTEYE_JOBS:-}"
 LTO="${SMARTEYE_LTO:-no}"
 INCLUDE_MODELS="${SMARTEYE_INCLUDE_MODELS:-no}"
 MAX_DIST_MB="${SMARTEYE_MAX_DIST_MB:-3072}"
@@ -29,16 +29,26 @@ if [[ ! -f "$ENTRY" ]]; then
     exit 1
 fi
 
+APP_VERSION=$("$PYTHON" -c "import json; d=json.load(open('app_info.json')); print(d['version'])" 2>/dev/null || echo "")
+if [[ -z "$APP_VERSION" ]]; then
+    error "Could not read version from app_info.json"
+    exit 1
+fi
+if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+ ]]; then
+    error "Version '$APP_VERSION' in app_info.json does not match expected format (e.g. 1.0 or 1.0.0)"
+    exit 1
+fi
+
 FREE_MB=$(powershell.exe -NoProfile -Command \
     "(Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024" 2>/dev/null \
     | tr -d '[:space:]' || echo "0")
 FREE_MB=${FREE_MB%.*}
 
-echo -e "${BLD}=== Smart Eye - Safe Nuitka Build ===${RST}"
+echo -e "${BLD}=== Smart Eye v${APP_VERSION} - Safe Nuitka Build ===${RST}"
 info "Python   : $PYTHON"
 info "Entry    : $ENTRY"
 info "Output   : $OUT_DIR"
-info "Jobs     : $JOBS"
+info "Jobs     : ${JOBS:-auto}"
 info "LTO      : $LTO"
 info "Models   : $INCLUDE_MODELS"
 info "Free RAM : ~${FREE_MB} MB"
@@ -59,6 +69,26 @@ NUITKA_VER=$("$PYTHON" -m nuitka --version 2>&1 | head -1)
 info "Nuitka   : $NUITKA_VER"
 echo ""
 
+info "Scanning for duplicate insightface cython packages..."
+SITE_PACKAGES=$("$PYTHON" -c "import site; print(site.getsitepackages()[0])")
+PYTHON_HOME=$(dirname "$SITE_PACKAGES")
+
+CYTHON_GLOBAL="$PYTHON_HOME/insightface/thirdparty/face3d/mesh/cython"
+CYTHON_SITE="$SITE_PACKAGES/insightface/thirdparty/face3d/mesh/cython"
+
+if [[ -d "$CYTHON_GLOBAL" && -d "$CYTHON_SITE" ]]; then
+    warn "Duplicate insightface cython found at: $CYTHON_GLOBAL"
+    warn "Removing to prevent Nuitka duplicate locals crash..."
+    rm -rf "$CYTHON_GLOBAL"
+    info "Duplicate removed."
+elif [[ -d "$CYTHON_GLOBAL" && ! -d "$CYTHON_SITE" ]]; then
+    warn "insightface cython only exists at global path (no site-packages copy)."
+    warn "Skipping removal to avoid breaking the install."
+else
+    info "No duplicate insightface cython found."
+fi
+echo ""
+
 HAS_MODELS=false
 if [[ -d "$ROOT/data/models" ]] && [[ -n "$(ls -A "$ROOT/data/models" 2>/dev/null)" ]]; then
     HAS_MODELS=true
@@ -73,7 +103,6 @@ if [[ "$INCLUDE_MODELS" != "yes" ]]; then
     warn "Set SMARTEYE_INCLUDE_MODELS=yes if you explicitly need bundled model files."
 fi
 
-# Remove previous output so repeated builds do not accumulate stale files.
 rm -rf "$OUT_DIR"
 
 warn "Compilation can take a long time on resource-limited machines."
@@ -87,14 +116,9 @@ NUITKA_ARGS=(
     --output-dir="$OUT_DIR"
     --output-filename="$DIST_NAME"
     --remove-output
-
-    --jobs="$JOBS"
     --lto="$LTO"
-
     --windows-console-mode=disable
-
     --enable-plugin=pyside6
-
     --include-package=psutil
     --include-package=PySide6
     --include-package=shiboken6
@@ -110,17 +134,14 @@ NUITKA_ARGS=(
     --include-package=frontend
     --include-package=utils
     --include-package=streamlink
-
     --include-package-data=reportlab
     --include-package-data=pyqtgraph
     --include-package-data=insightface
     --include-package-data=onnxruntime
     --include-package-data=streamlink
-
     --include-data-dir="frontend/assets=frontend/assets"
     --include-data-file="app_info.json=app_info.json"
     --include-data-file="backend/database/schema.sql=backend/database/schema.sql"
-
     --nofollow-import-to=PySide6.QtWebEngine
     --nofollow-import-to=PySide6.QtWebEngineWidgets
     --nofollow-import-to=PySide6.QtWebEngineCore
@@ -128,15 +149,17 @@ NUITKA_ARGS=(
     --nofollow-import-to=unittest
     --nofollow-import-to=test
     --nofollow-import-to=doctest
-
     --noinclude-data-files=**/tests/**
     --noinclude-data-files=**/test/**
-
     --assume-yes-for-downloads
     --show-progress
     --show-memory
     --show-scons
 )
+
+if [[ -n "$JOBS" ]]; then
+    NUITKA_ARGS+=(--jobs="$JOBS")
+fi
 
 if [[ "$HAS_MODELS" == true && "$INCLUDE_MODELS" == "yes" ]]; then
     NUITKA_ARGS+=(--include-data-dir="data/models=data/models")
@@ -166,6 +189,15 @@ if [[ -f "$EXE" ]]; then
         exit 2
     fi
     info "Dist size  : ${DIST_MB} MB (limit: ${MAX_DIST_MB} MB)"
+    info "Version    : v${APP_VERSION}"
+
+    ARCHIVE_NAME="SmartEye-v${APP_VERSION}-main-dist.zip"
+    read -rp "Create zip archive '$ARCHIVE_NAME'? [y/N] " zip_ans
+    if [[ "${zip_ans,,}" == "y" ]]; then
+        (cd "$DIST_DIR" && zip -r "$OUT_DIR/$ARCHIVE_NAME" .)
+        info "Archive created: $OUT_DIR/$ARCHIVE_NAME"
+    fi
+    echo ""
 
     BUILD_CACHE="$OUT_DIR/main.build"
     if [[ -d "$BUILD_CACHE" ]]; then
