@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS clips (
 CREATE TABLE IF NOT EXISTS accounts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     email         TEXT NOT NULL UNIQUE,
+    username      TEXT,
     password_hash TEXT NOT NULL,
     salt          TEXT NOT NULL,
     allowed_tabs  TEXT NOT NULL DEFAULT '[]',
@@ -217,6 +218,8 @@ INSERT OR IGNORE INTO app_settings VALUES ('insightface_model_dir', '', 'string'
 INSERT OR IGNORE INTO app_settings VALUES ('insightface_root_cache', '', 'string', 'InsightFace Root Cache', 'detection');
 INSERT OR IGNORE INTO app_settings VALUES ('insightface_allowed_modules', '["detection","recognition"]', 'json', 'Allowed InsightFace Modules', 'detection');
 INSERT OR IGNORE INTO app_settings VALUES ('limit_resources', '0', 'bool', 'Limit Resource Usage', 'performance');
+INSERT OR IGNORE INTO app_settings VALUES ('max_cpu_cores', '2', 'int', 'Max CPU Cores', 'performance');
+INSERT OR IGNORE INTO app_settings VALUES ('max_ram_mb', '4096', 'int', 'Max RAM (MB)', 'performance');
 INSERT OR IGNORE INTO app_settings VALUES ('ui_pause_inactive_tabs', '1', 'bool', 'Pause inactive tabs', 'performance');
 INSERT OR IGNORE INTO app_settings VALUES ('ui_unload_on_leave', '1', 'bool', 'Unload heavy tabs on leave', 'performance');
 INSERT OR IGNORE INTO app_settings VALUES ('ui_unload_idle_min', '5', 'int', 'Unload idle tabs after (min)', 'performance');
