@@ -973,6 +973,7 @@ def add_known_face(
     email="",
     embedding_model="",
     gender=None,
+    national_id="",
 ):
 
     try:
@@ -1000,13 +1001,14 @@ def add_known_face(
     gender_norm = _normalize_gender_value(gender)
     cur = _write_execute(
         """INSERT INTO known_faces
-           (uuid, name, role, department, address, country, birth_date, phone, email, embedding, image_path, authorized_cameras, liveness_required, embedding_model, gender_norm)
+           (uuid, name, role, department, national_id, address, country, birth_date, phone, email, embedding, image_path, authorized_cameras, liveness_required, embedding_model, gender_norm)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             row_uuid,
             name,
             role,
             department,
+            national_id,
             address,
             country,
             birth_date,
@@ -1071,6 +1073,7 @@ def update_known_face(face_id, **kwargs):
         "department",
         "address",
         "country",
+        "national_id",
         "birth_date",
         "phone",
         "email",
@@ -1670,6 +1673,7 @@ def add_face(
     birth_date="",
     phone="",
     email="",
+    national_id="",
     embedding_model="",
     gender=None,
 ):
@@ -1687,6 +1691,7 @@ def add_face(
         birth_date=birth_date,
         phone=phone,
         email=email,
+        national_id=national_id,
         embedding_model=embedding_model,
         gender=gender,
     )

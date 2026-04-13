@@ -77,6 +77,7 @@ class _EnrollPanelMixin:
             self._ef_birth,
             self._ef_phone,
             self._ef_email,
+            getattr(self, "_ef_national_id", None),
         ]:
             edit.clear()
         self._ef_auth.setChecked(True)
@@ -163,6 +164,7 @@ class _EnrollPanelMixin:
         _dept_re = QRegularExpression(r".*")
         _addr_re = QRegularExpression(r"[\p{L}\p{N} '\-.,/#&()]*")
         _country_re = QRegularExpression(r"[\p{L} '\-.]*")
+        _nid_re = QRegularExpression(r"[A-Za-z0-9\- ]*")
         _phone_re = QRegularExpression(r"[\d+\-() ]*")
         _email_re = QRegularExpression(r"[a-zA-Z0-9!#$%&'*+\-/=?^_`{|}~@.\[\]]*")
 
@@ -194,6 +196,10 @@ class _EnrollPanelMixin:
         self._ef_country.setPlaceholderText("Optional")
         self._ef_country.setValidator(QRegularExpressionValidator(_country_re))
         self._ef_country.setMaxLength(60)
+        self._ef_national_id = QLineEdit()
+        self._ef_national_id.setPlaceholderText("National ID (optional)")
+        self._ef_national_id.setValidator(QRegularExpressionValidator(_nid_re))
+        self._ef_national_id.setMaxLength(60)
         self._ef_birth = QLineEdit()
         self._ef_birth.setPlaceholderText("DD-MM-YYYY")
         self._ef_birth.setMaxLength(10)
@@ -240,6 +246,7 @@ class _EnrollPanelMixin:
             ("Third Name", self._ef_third),
             ("Last Name", self._ef_last),
             ("Department", self._ef_dept),
+            ("National ID", self._ef_national_id),
             ("Address", self._ef_address),
             ("Country", self._ef_country),
             ("Birth Date", self._ef_birth),
@@ -480,6 +487,7 @@ class _EnrollPanelMixin:
             gender=self._ef_gender.currentText().strip(),
             address=self._ef_address.text().strip(),
             country=self._ef_country.text().strip(),
+            national_id=self._ef_national_id.text().strip(),
             birth_date=self._ef_birth.text().strip(),
             phone=self._ef_phone.text().strip(),
             email=self._ef_email.text().strip(),

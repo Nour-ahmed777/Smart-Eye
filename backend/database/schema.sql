@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS known_faces (
     name            TEXT NOT NULL,
     role            TEXT,
     department      TEXT,
+    national_id     TEXT,
     address         TEXT,
     country         TEXT,
     birth_date      TEXT,
