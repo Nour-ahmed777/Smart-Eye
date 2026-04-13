@@ -41,6 +41,14 @@ jobs:
           pip install -r requirements.txt
           pip install --upgrade ordered-set zstandard nuitka
 
+      - name: Cache Nuitka compilation cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuitka
+          key: nuitka-${{ runner.os }}-${{ hashFiles('**/*.py') }}
+          restore-keys: |
+            nuitka-${{ runner.os }}-
+
       - name: Clean previous output
         shell: pwsh
         run: |
@@ -48,17 +56,44 @@ jobs:
             Remove-Item -Recurse -Force build
           }
 
-      - name: Build standalone executable (safe profile)
+      - name: Remove duplicate insightface mesh cython
+        shell: pwsh
+        run: |
+          $pattern = "C:/hostedtoolcache/windows/Python/3.12.*/x64/insightface/thirdparty/face3d/mesh/cython"
+          $matches = Get-ChildItem -Path "C:/hostedtoolcache/windows/Python/3.12.*/x64/insightface/thirdparty/face3d/mesh/cython" -Directory -ErrorAction SilentlyContinue
+          if ($matches) {
+            foreach ($dir in $matches) {
+              Write-Host "Removing duplicate: $($dir.FullName)"
+              Remove-Item -Recurse -Force $dir.FullName
+            }
+          } else {
+            Write-Host "No duplicate global cython found."
+          }
+
+      - name: Validate version from app_info.json
+        id: appinfo
+        shell: pwsh
+        run: |
+          $appInfo = Get-Content app_info.json | ConvertFrom-Json
+          $version = "$($appInfo.version)"
+          if (-not $version) {
+            throw "app_info.json version is missing"
+          }
+          if ($version -notmatch '^\d+\.\d+') {
+            throw "app_info.json version '$version' does not match expected format (e.g. 1.0 or 1.0.0)"
+          }
+          "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build standalone executable
         shell: pwsh
         env:
           INCLUDE_MODELS: ${{ github.event.inputs.include_models || 'false' }}
         run: |
-          $args = @(
+          $buildArgs = @(
             "--standalone",
             "--output-dir=build",
             "--output-filename=SmartEye",
             "--remove-output",
-            "--jobs=2",
             "--lto=no",
             "--windows-console-mode=disable",
             "--enable-plugin=pyside6",
@@ -101,10 +136,10 @@ jobs:
           )
 
           if ($env:INCLUDE_MODELS -eq "true" -and (Test-Path "data/models")) {
-            $args += "--include-data-dir=data/models=data/models"
+            $buildArgs += "--include-data-dir=data/models=data/models"
           }
 
-          python -m nuitka @args
+          python -m nuitka @buildArgs
 
       - name: Validate output and size limit
         id: verify
@@ -135,20 +170,15 @@ jobs:
         id: package
         shell: pwsh
         run: |
-          $appInfo = Get-Content app_info.json | ConvertFrom-Json
-          $version = "$($appInfo.version)"
-          if (-not $version) {
-            throw "app_info.json version is missing"
-          }
-
+          $version = "${{ steps.appinfo.outputs.app_version }}"
           $archiveName = "SmartEye-v$version-main-dist.zip"
           $archive = Join-Path $PWD "build\$archiveName"
+
           if (Test-Path $archive) {
             Remove-Item -Force $archive
           }
 
           Compress-Archive -Path "${{ steps.verify.outputs.dist_dir }}\*" -DestinationPath $archive -CompressionLevel Optimal
-          "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "archive_name=$archiveName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "artifact_path=$archive" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
@@ -159,13 +189,13 @@ jobs:
           path: ${{ steps.package.outputs.artifact_path }}
           retention-days: 14
 
-      - name: Create or update GitHub Release (main push)
+      - name: Create or update GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = "${{ steps.package.outputs.app_version }}"
+          $version = "${{ steps.appinfo.outputs.app_version }}"
           $tag = "v$version"
           $title = "SmartEye $tag"
           $asset = "${{ steps.package.outputs.artifact_path }}"
@@ -173,7 +203,6 @@ jobs:
           gh release view $tag --repo "${{ github.repository }}" *> $null
           if ($LASTEXITCODE -ne 0) {
             gh release create $tag $asset --repo "${{ github.repository }}" --title $title --generate-notes
-          }
-          else {
+          } else {
             gh release upload $tag $asset --repo "${{ github.repository }}" --clobber
           }
