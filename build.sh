@@ -89,6 +89,51 @@ else
 fi
 echo ""
 
+info "Collecting PySide6 plugins for packaging..."
+PYSIDE_PLUGINS_SRC=$("$PYTHON" -c "import PySide6, os; print(os.path.join(os.path.dirname(PySide6.__file__), 'plugins'))" 2>/dev/null || echo "")
+PYSIDE_PLUGINS_DST="$ROOT/frontend/pyside6_plugins"
+if [[ -n "$PYSIDE_PLUGINS_SRC" && -d "$PYSIDE_PLUGINS_SRC" ]]; then
+    rm -rf "$PYSIDE_PLUGINS_DST"
+    cp -r "$PYSIDE_PLUGINS_SRC" "$PYSIDE_PLUGINS_DST"
+    info "PySide6 plugins copied to frontend/pyside6_plugins"
+else
+    warn "PySide6 plugins path not found: $PYSIDE_PLUGINS_SRC"
+fi
+echo ""
+
+info "Staging scientific runtime libs (scipy.libs, numpy.libs)..."
+BUILD_ASSETS_DIR="$ROOT/build_assets"
+mkdir -p "$BUILD_ASSETS_DIR"
+"$PYTHON" - <<'PY'
+import importlib.util
+import pathlib
+import shutil
+
+root = pathlib.Path(".").resolve()
+out_root = root / "build_assets"
+out_root.mkdir(exist_ok=True)
+
+def stage_lib_dir(pkg_name: str):
+    spec = importlib.util.find_spec(pkg_name)
+    if not spec or not spec.origin:
+        print(f"[warn] could not resolve {pkg_name}")
+        return
+    pkg_dir = pathlib.Path(spec.origin).resolve().parent
+    libs_dir = pkg_dir.parent / f"{pkg_name}.libs"
+    if not libs_dir.exists():
+        print(f"[info] no {pkg_name}.libs at {libs_dir}")
+        return
+    dst = out_root / f"{pkg_name}.libs"
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(libs_dir, dst)
+    print(f"[ok] staged {libs_dir} -> {dst}")
+
+stage_lib_dir("scipy")
+stage_lib_dir("numpy")
+PY
+echo ""
+
 HAS_MODELS=false
 if [[ -d "$ROOT/data/models" ]] && [[ -n "$(ls -A "$ROOT/data/models" 2>/dev/null)" ]]; then
     HAS_MODELS=true
@@ -101,6 +146,12 @@ echo ""
 if [[ "$INCLUDE_MODELS" != "yes" ]]; then
     warn "Model bundle is excluded by default to prevent huge output."
     warn "Set SMARTEYE_INCLUDE_MODELS=yes if you explicitly need bundled model files."
+fi
+
+HAS_OBJ_MODEL=false
+if [[ -f "$ROOT/data/models/Obj-Detection.onnx" ]]; then
+    HAS_OBJ_MODEL=true
+    info "Object model detected: data/models/Obj-Detection.onnx"
 fi
 
 rm -rf "$OUT_DIR"
@@ -134,23 +185,80 @@ NUITKA_ARGS=(
     --include-package=frontend
     --include-package=utils
     --include-package=streamlink
+    --include-package=numpy
+    --include-package=scipy
+    --include-package=skimage
+    --include-package=albumentations
+    --include-module=scipy._cyutility
+    --include-module=scipy._lib._ccallback_c
     --include-package-data=reportlab
     --include-package-data=pyqtgraph
     --include-package-data=insightface
     --include-package-data=onnxruntime
     --include-package-data=streamlink
+    --include-package-data=numpy
+    --include-package-data=scipy
+    --include-package-data=skimage
+    --include-package-data=albumentations
     --include-data-dir="frontend/assets=frontend/assets"
+    --include-data-dir="frontend/pyside6_plugins=PySide6/plugins"
     --include-data-file="app_info.json=app_info.json"
     --include-data-file="backend/database/schema.sql=backend/database/schema.sql"
+    --nofollow-import-to=numpy.distutils
+    --nofollow-import-to=numpy.random.tests
+    --nofollow-import-to=numpy.random.tests.test_extending
     --nofollow-import-to=PySide6.QtWebEngine
     --nofollow-import-to=PySide6.QtWebEngineWidgets
     --nofollow-import-to=PySide6.QtWebEngineCore
+    --nofollow-import-to=PySide6.Qt3DCore
+    --nofollow-import-to=PySide6.Qt3DRender
+    --nofollow-import-to=PySide6.Qt3DInput
+    --nofollow-import-to=PySide6.Qt3DLogic
+    --nofollow-import-to=PySide6.Qt3DAnimation
+    --nofollow-import-to=PySide6.Qt3DExtras
+    --nofollow-import-to=PySide6.QtCharts
+    --nofollow-import-to=PySide6.QtDataVisualization
+    --nofollow-import-to=PySide6.QtLocation
+    --nofollow-import-to=PySide6.QtPositioning
+    --nofollow-import-to=PySide6.QtRemoteObjects
+    --nofollow-import-to=PySide6.QtSensors
+    --nofollow-import-to=PySide6.QtSerialPort
+    --nofollow-import-to=PySide6.QtTextToSpeech
+    --nofollow-import-to=PySide6.QtBluetooth
+    --nofollow-import-to=PySide6.QtNfc
     --nofollow-import-to=onnxruntime.training
+    --nofollow-import-to=onnxruntime.tools
+    --nofollow-import-to=onnx.backend.test
+    --nofollow-import-to=cv2.samples
+    --nofollow-import-to=pyqtgraph.tests
+    --nofollow-import-to=pyqtgraph.opengl
+    --nofollow-import-to=pyqtgraph.exporters
     --nofollow-import-to=unittest
     --nofollow-import-to=test
+    --nofollow-import-to=distutils
+    --nofollow-import-to=setuptools
+    --nofollow-import-to=pkg_resources
+    --nofollow-import-to=pip
     --nofollow-import-to=doctest
-    --noinclude-data-files=**/tests/**
-    --noinclude-data-files=**/test/**
+    --noinclude-data-files=qt6webenginecore.dll
+    --noinclude-data-files=qt6webenginequick.dll
+    --noinclude-data-files=qt6quick.dll
+    --noinclude-data-files=qt6quick3d.dll
+    --noinclude-data-files=qt6quick3druntimerender.dll
+    --noinclude-data-files=qt6quick3dutils.dll
+    --noinclude-data-files=qt6quickcontrols2.dll
+    --noinclude-data-files=qt6quickshapes.dll
+    --noinclude-data-files=qt6quicktemplates2.dll
+    --noinclude-data-files=qt6quicktest.dll
+    --noinclude-data-files=qt6quickwidgets.dll
+    --noinclude-data-files=qt6qml.dll
+    --noinclude-data-files=qt6qmlmeta.dll
+    --noinclude-data-files=qt6qmlmodels.dll
+    --noinclude-data-files=qt6qmlworkerscript.dll
+    --noinclude-data-files=qt6scxml.dll
+    --noinclude-data-files=qt6spatialaudio.dll
+    --noinclude-data-files=skimage/data/*
+    --noinclude-data-files=pyqtgraph/examples/*
     --assume-yes-for-downloads
     --show-progress
     --show-memory
@@ -159,6 +267,18 @@ NUITKA_ARGS=(
 
 if [[ -n "$JOBS" ]]; then
     NUITKA_ARGS+=(--jobs="$JOBS")
+fi
+
+if [[ -d "$ROOT/build_assets/scipy.libs" ]]; then
+    NUITKA_ARGS+=(--include-data-dir="build_assets/scipy.libs=scipy.libs")
+fi
+
+if [[ -d "$ROOT/build_assets/numpy.libs" ]]; then
+    NUITKA_ARGS+=(--include-data-dir="build_assets/numpy.libs=numpy.libs")
+fi
+
+if [[ "$HAS_OBJ_MODEL" == true ]]; then
+    NUITKA_ARGS+=(--include-data-file="data/models/Obj-Detection.onnx=data/models/Obj-Detection.onnx")
 fi
 
 if [[ "$HAS_MODELS" == true && "$INCLUDE_MODELS" == "yes" ]]; then

@@ -85,6 +85,42 @@ jobs:
           restore-keys: |
             nuitka-${{ runner.os }}-
 
+      - name: Stage scientific runtime libs for packaging
+        shell: pwsh
+        run: |
+          @'
+          import importlib.util
+          import pathlib
+          import shutil
+
+          root = pathlib.Path(".").resolve()
+          out_root = root / "build_assets"
+          out_root.mkdir(exist_ok=True)
+
+          def stage_lib_dir(pkg_name: str):
+              spec = importlib.util.find_spec(pkg_name)
+              if not spec or not spec.origin:
+                  print(f"[warn] could not resolve {pkg_name}")
+                  return
+              pkg_dir = pathlib.Path(spec.origin).resolve().parent
+              libs_dir = pkg_dir.parent / f"{pkg_name}.libs"
+              if not libs_dir.exists():
+                  print(f"[info] no {pkg_name}.libs at {libs_dir}")
+                  return
+              dst = out_root / f"{pkg_name}.libs"
+              if dst.exists():
+                  shutil.rmtree(dst)
+              shutil.copytree(libs_dir, dst)
+              print(f"[ok] staged {libs_dir} -> {dst}")
+
+          stage_lib_dir("scipy")
+          stage_lib_dir("numpy")
+          '@ | python -
+
+          Get-ChildItem -Path "$PWD\build_assets" -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Staged runtime dir: $($_.FullName)"
+          }
+
       - name: Check for model bundle
         id: check_models
         shell: pwsh
@@ -129,15 +165,28 @@ jobs:
             frontend
             utils
             streamlink
+            numpy
+            scipy
+            skimage
+            albumentations
+          include-module: |
+            scipy._cyutility
+            scipy._lib._ccallback_c
           include-package-data: |
             reportlab
             pyqtgraph
             insightface
             onnxruntime
             streamlink
+            numpy
+            scipy
+            skimage
+            albumentations
           include-data-dir: |
             frontend/assets=frontend/assets
             frontend/pyside6_plugins=PySide6/plugins
+            build_assets/scipy.libs=scipy.libs
+            build_assets/numpy.libs=numpy.libs
           include-data-files: |
             app_info.json=app_info.json
             backend/database/schema.sql=backend/database/schema.sql

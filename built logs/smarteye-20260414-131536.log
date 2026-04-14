@@ -1,0 +1,72 @@
+2026-04-14 13:15:38,868 WARNING [MainThread] py.warnings: C:\PROGRA~2\SmartEye\requests\__init__.py:86: RequestsDependencyWarning: Unable to find acceptable character detection dependency (chardet or charset_normalizer).
+
+2026-04-14 13:15:46,910 INFO [MainThread] frontend.main_window: Page state (startup) current=dashboard loaded=['dashboard', 'settings'] unloaded=['detectors', 'rules', 'models', 'faces', 'analytics', 'logs', 'playback', 'notifications']
+2026-04-14 13:15:47,883 INFO [MainThread] backend.models.face_model:  Cache MISS: Loading model_name from database
+2026-04-14 13:15:47,894 INFO [MainThread] backend.models.face_model: Cached model_name=buffalo_l
+2026-04-14 13:15:49,956 INFO [MainThread] frontend.main_window: Page state (unloaded:dashboard) current=settings loaded=['settings'] unloaded=['dashboard', 'detectors', 'rules', 'models', 'faces', 'analytics', 'logs', 'playback', 'notifications']
+2026-04-14 13:15:49,957 INFO [MainThread] frontend.main_window: Page state (navigated:settings) current=settings loaded=['settings'] unloaded=['dashboard', 'detectors', 'rules', 'models', 'faces', 'analytics', 'logs', 'playback', 'notifications']
+2026-04-14 13:15:51,825 ERROR [FaceModelAsyncLoad] backend.models.face_model: Async load failed: The `scipy` install you are using seems to be broken, (extension modules cannot be imported), please try reinstalling.
+Traceback (most recent call last):
+  File "C:\PROGRA~2\SmartEye\scipy\__init__.py", line 95, in <module scipy>
+  File "C:\PROGRA~2\SmartEye\scipy\_lib\_ccallback.py", line 1, in <module scipy._lib._ccallback>
+  File "scipy/_lib/_ccallback_c.pyx", line 1, in init scipy._lib._ccallback_c
+ModuleNotFoundError: No module named 'scipy._cyutility'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 324, in _async_load
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 307, in load
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 339, in _load_internal
+  File "C:\PROGRA~2\SmartEye\insightface\__init__.py", line 18, in <module insightface>
+  File "C:\PROGRA~2\SmartEye\insightface\app\__init__.py", line 2, in <module insightface.app>
+  File "C:\PROGRA~2\SmartEye\insightface\app\mask_renderer.py", line 4, in <module insightface.app.mask_renderer>
+  File "C:\PROGRA~2\SmartEye\albumentations\__init__.py", line 18, in <module albumentations>
+  File "C:\PROGRA~2\SmartEye\albumentations\augmentations\__init__.py", line 19, in <module albumentations.augmentations>
+  File "C:\PROGRA~2\SmartEye\albumentations\augmentations\pixel\transforms.py", line 39, in <module albumentations.augmentations.pixel.transforms>
+  File "C:\PROGRA~2\SmartEye\scipy\__init__.py", line 100, in <module scipy>
+ImportError: The `scipy` install you are using seems to be broken, (extension modules cannot be imported), please try reinstalling.
+2026-04-14 13:15:55,757 ERROR [FaceModelAsyncLoad] backend.models.face_model: Async load failed: The `scipy` install you are using seems to be broken, (extension modules cannot be imported), please try reinstalling.
+Traceback (most recent call last):
+  File "C:\PROGRA~2\SmartEye\scipy\__init__.py", line 95, in <module scipy>
+  File "C:\PROGRA~2\SmartEye\scipy\_lib\_ccallback.py", line 1, in <module scipy._lib._ccallback>
+  File "scipy/_lib/_ccallback_c.pyx", line 1, in init scipy._lib._ccallback_c
+ModuleNotFoundError: No module named 'scipy._cyutility'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 324, in _async_load
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 307, in load
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 339, in _load_internal
+  File "C:\PROGRA~2\SmartEye\insightface\__init__.py", line 18, in <module insightface>
+  File "C:\PROGRA~2\SmartEye\insightface\app\__init__.py", line 2, in <module insightface.app>
+  File "C:\PROGRA~2\SmartEye\insightface\app\mask_renderer.py", line 4, in <module insightface.app.mask_renderer>
+  File "C:\PROGRA~2\SmartEye\albumentations\__init__.py", line 18, in <module albumentations>
+  File "C:\PROGRA~2\SmartEye\albumentations\augmentations\__init__.py", line 19, in <module albumentations.augmentations>
+  File "C:\PROGRA~2\SmartEye\albumentations\augmentations\pixel\transforms.py", line 39, in <module albumentations.augmentations.pixel.transforms>
+  File "C:\PROGRA~2\SmartEye\scipy\__init__.py", line 100, in <module scipy>
+ImportError: The `scipy` install you are using seems to be broken, (extension modules cannot be imported), please try reinstalling.
+2026-04-14 13:15:55,808 INFO [MainThread] frontend.main_window: Page state (navigated:models) current=models loaded=['models', 'settings'] unloaded=['dashboard', 'detectors', 'rules', 'faces', 'analytics', 'logs', 'playback', 'notifications']
+2026-04-14 13:15:55,811 ERROR [FaceModelAsyncLoad] backend.models.face_model: Async load failed: The `scipy` install you are using seems to be broken, (extension modules cannot be imported), please try reinstalling.
+Traceback (most recent call last):
+  File "C:\PROGRA~2\SmartEye\scipy\__init__.py", line 95, in <module scipy>
+  File "C:\PROGRA~2\SmartEye\scipy\_lib\_ccallback.py", line 1, in <module scipy._lib._ccallback>
+  File "scipy/_lib/_ccallback_c.pyx", line 1, in init scipy._lib._ccallback_c
+ModuleNotFoundError: No module named 'scipy._cyutility'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 324, in _async_load
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 307, in load
+  File "C:\PROGRA~2\SmartEye\backend\models\face_model.py", line 339, in _load_internal
+  File "C:\PROGRA~2\SmartEye\insightface\__init__.py", line 18, in <module insightface>
+  File "C:\PROGRA~2\SmartEye\insightface\app\__init__.py", line 2, in <module insightface.app>
+  File "C:\PROGRA~2\SmartEye\insightface\app\mask_renderer.py", line 4, in <module insightface.app.mask_renderer>
+  File "C:\PROGRA~2\SmartEye\albumentations\__init__.py", line 18, in <module albumentations>
+  File "C:\PROGRA~2\SmartEye\albumentations\augmentations\__init__.py", line 19, in <module albumentations.augmentations>
+  File "C:\PROGRA~2\SmartEye\albumentations\augmentations\pixel\transforms.py", line 39, in <module albumentations.augmentations.pixel.transforms>
+  File "C:\PROGRA~2\SmartEye\scipy\__init__.py", line 100, in <module scipy>
+ImportError: The `scipy` install you are using seems to be broken, (extension modules cannot be imported), please try reinstalling.
+2026-04-14 13:16:03,373 WARNING [MainThread] qt: No QtMultimedia backends found. Only QMediaDevices, QAudioDevice, QSoundEffect, QAudioSink, and QAudioSource are available.
