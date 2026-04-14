@@ -137,7 +137,7 @@ jobs:
             streamlink
           include-data-dir: |
             frontend/assets=frontend/assets
-            PySide6/plugins=frontend/pyside6_plugins
+            frontend/pyside6_plugins=PySide6/plugins
           include-data-files: |
             app_info.json=app_info.json
             backend/database/schema.sql=backend/database/schema.sql
