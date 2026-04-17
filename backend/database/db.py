@@ -1002,7 +1002,7 @@ def add_known_face(
     cur = _write_execute(
         """INSERT INTO known_faces
            (uuid, name, role, department, national_id, address, country, birth_date, phone, email, embedding, image_path, authorized_cameras, liveness_required, embedding_model, gender_norm)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             row_uuid,
             name,
