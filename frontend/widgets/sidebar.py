@@ -4,7 +4,7 @@ from pathlib import Path
 import json as _json
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, QSize
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QBrush, QPixmap, QIcon
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QBrush, QPixmap, QIcon, QRegion
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -85,6 +85,7 @@ _LOGO_SIZE_EXPANDED = 128
 _LOGO_SIZE_WORDMARK = 62
 _LOGO_SIZE_COLLAPSED_ICON = 36
 _LOGO_SIZE_EXPANDED_ICON = 46
+_LOGO_TRIMMED_PIX: QPixmap | None = None
 
 
 def _read_app_info() -> dict:
@@ -151,29 +152,16 @@ class _LogoMonogram(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setFixedSize(size, size)
         self._pix = None
+        global _LOGO_TRIMMED_PIX
         try:
-            pix = QPixmap(LOGO_ICON_PATH)
-            if not pix.isNull():
-                img = pix.toImage().convertToFormat(pix.toImage().Format.Format_ARGB32)
-                left, top = img.width(), img.height()
-                right, bottom = 0, 0
-                found = False
-                for y in range(img.height()):
-                    for x in range(img.width()):
-                        if img.pixelColor(x, y).alpha() > 0:
-                            found = True
-                            if x < left:
-                                left = x
-                            if y < top:
-                                top = y
-                            if x > right:
-                                right = x
-                            if y > bottom:
-                                bottom = y
-                if found and right >= left and bottom >= top:
-                    self._pix = pix.copy(left, top, right - left + 1, bottom - top + 1)
-                else:
-                    self._pix = pix
+            if _LOGO_TRIMMED_PIX is None:
+                pix = QPixmap(LOGO_ICON_PATH)
+                if not pix.isNull():
+                    # Use Qt's native alpha-mask bounds (fast C++ path) instead of Python pixel loops.
+                    mask = pix.mask()
+                    rect = QRegion(mask).boundingRect() if not mask.isNull() else pix.rect()
+                    _LOGO_TRIMMED_PIX = pix.copy(rect) if rect.isValid() else pix
+            self._pix = _LOGO_TRIMMED_PIX
         except (OSError, RuntimeError):
             self._pix = None
 
