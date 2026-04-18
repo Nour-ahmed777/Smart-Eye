@@ -15,7 +15,7 @@ NUITKA_VERSION="${SMARTEYE_NUITKA_VERSION:-2.7.11}"
 ICON_PATH="frontend/assets/icons/icon.ico"
 
 if [[ -z "$JOBS" ]]; then
-    JOBS="4"
+    JOBS="2"
 fi
 
 RED='\033[0;31m'; GRN='\033[0;32m'; YLW='\033[1;33m'; BLD='\033[1m'; RST='\033[0m'
@@ -229,6 +229,12 @@ NUITKA_ARGS=(
     --nofollow-import-to=numpy.distutils
     --nofollow-import-to=numpy.random.tests
     --nofollow-import-to=numpy.random.tests.test_extending
+    --nofollow-import-to=scipy.tests
+    --nofollow-import-to=scipy.stats.tests
+    --nofollow-import-to=scipy.stats.tests.test_censored_data
+    --nofollow-import-to=scipy.stats.tests.test_continuous
+    --nofollow-import-to=sympy.polys.polyquinticconst
+    --nofollow-import-to=trio.testing
     --nofollow-import-to=PySide6.QtWebEngine
     --nofollow-import-to=PySide6.QtWebEngineWidgets
     --nofollow-import-to=PySide6.QtWebEngineCore
