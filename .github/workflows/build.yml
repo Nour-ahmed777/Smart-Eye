@@ -143,7 +143,7 @@ jobs:
           mode: standalone
           output-dir: build
           output-file: SmartEye
-          jobs: "4"
+          jobs: "2"
           lto: "yes"
           windows-console-mode: disable
           windows-icon-from-ico: frontend/assets/icons/icon.ico
@@ -195,6 +195,12 @@ jobs:
             numpy.distutils
             numpy.random.tests
             numpy.random.tests.test_extending
+            scipy.tests
+            scipy.stats.tests
+            scipy.stats.tests.test_censored_data
+            scipy.stats.tests.test_continuous
+            sympy.polys.polyquinticconst
+            trio.testing
             onnxruntime.training
             onnxruntime.tools
             onnx.backend.test
