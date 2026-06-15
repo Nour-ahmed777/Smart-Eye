@@ -1,8 +1,9 @@
-﻿import logging
-from datetime import date, datetime, timezone
+import contextlib
+import logging
+from datetime import datetime, timezone
 
-from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QFont, QPixmap, QTextCharFormat, QColor
+from PySide6.QtCore import QDate, Qt, QThread, Signal, QSettings
+from PySide6.QtGui import QFont, QTextCharFormat, QColor
 from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
@@ -13,16 +14,16 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 from frontend.widgets.no_wheel_combo import NoWheelComboBox
 
-from backend.analytics import report_generator, stats_engine
-from backend.analytics.heatmap_generator import generate_heatmap_from_db, get_generator
 from backend.repository import db
 from frontend.app_theme import page_base_styles, safe_set_point_size
 from frontend.icon_theme import themed_icon_pixmap
+from frontend.services.analytics_service import AnalyticsService
 from frontend.widgets.chart_widget import ChartWidget
 from frontend.widgets.heatmap_widget import HeatmapWidget
 from frontend.widgets.stat_card_widget import StatCardWidget
@@ -43,6 +44,8 @@ from frontend.styles._colors import (
     _DANGER_DIM,
     _PURPLE_DIM,
     _SUCCESS_DIM,
+    _WARNING_ALT,
+    _WARNING_BG_14,
     _TEXT_MUTED,
     _TEXT_PRI,
     _TEXT_SOFT,
@@ -73,6 +76,7 @@ from frontend.ui_tokens import (
     SPACE_MD,
     SPACE_28,
     SPACE_SM,
+    SPACE_XS,
     SPACE_XXS,
     SPACE_XXXS,
     SPACE_XL,
@@ -84,7 +88,6 @@ from frontend.ui_tokens import (
     SIZE_FIELD_W_LG,
     SIZE_HEADER_H,
     SIZE_ICON_LG,
-    SIZE_ICON_MD,
 )
 from frontend.styles._btn_styles import (
     _PRIMARY_BTN,
@@ -107,15 +110,81 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
 )
 
 logger = logging.getLogger(__name__)
+_RETIRED_ANALYTICS_WORKERS: set[QThread] = set()
+_RETIRED_PDF_WORKERS: set[QThread] = set()
 _TITLE_STYLE = text_style(_TEXT_PRI, extra="border: none; padding: 0;")
-_DATE_ARROW_STYLE = text_style(_TEXT_MUTED, size=FONT_SIZE_LABEL, extra="background: transparent;")
 _BG_BASE_STYLE = f"background: {_BG_BASE};"
+_FILTER_LABEL_STYLE = text_style(
+    _TEXT_MUTED,
+    size=FONT_SIZE_CAPTION,
+    weight=FONT_WEIGHT_BOLD,
+    extra="background: transparent;",
+)
+_DEBUG_BANNER_STYLE = (
+    f"color: {_WARNING_ALT}; background-color: {_WARNING_BG_14}; border: none; "
+    f"padding: {SPACE_SM}px {SPACE_20}px; font-weight: {FONT_WEIGHT_BOLD};"
+)
+
+
+class _AnalyticsLoadWorker(QThread):
+    finished_load = Signal(int, bool, object, str)
+
+    def __init__(self, request_id: int, options: dict, parent=None):
+        super().__init__(parent)
+        self._request_id = int(request_id)
+        self._options = dict(options)
+
+    def run(self):
+        try:
+            model = AnalyticsService().load_view_model(**self._options)
+            self.finished_load.emit(self._request_id, True, model, "")
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
+            logger.exception("Analytics refresh failed")
+            self.finished_load.emit(self._request_id, False, None, str(exc))
+
+
+class _PdfExportWorker(QThread):
+    finished_export = Signal(bool, str)
+
+    def __init__(self, path: str, options: dict, parent=None):
+        super().__init__(parent)
+        self._path = path
+        self._options = options
+
+    def run(self):
+        try:
+            AnalyticsService().export_pdf(self._path, **self._options)
+            self.finished_export.emit(True, self._path)
+        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as exc:
+            logger.exception("PDF export failed")
+            self.finished_export.emit(False, str(exc))
 
 
 class AnalyticsPage(QWidget):
+    @staticmethod
+    def _filter_field(label: str, widget: QWidget, width: int | None = None) -> QWidget:
+        if width is not None:
+            widget.setMinimumWidth(width)
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        wrap = QWidget()
+        wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout = QVBoxLayout(wrap)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SPACE_XXS)
+        caption = QLabel(label)
+        caption.setStyleSheet(_FILTER_LABEL_STYLE)
+        layout.addWidget(caption)
+        layout.addWidget(widget)
+        return wrap
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(_STYLESHEET)
+        self._load_worker = None
+        self._pdf_worker = None
+        self._refresh_seq = 0
+        self._pending_refresh = False
+        self._settings = QSettings("SmartEye", "Analytics")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -148,53 +217,48 @@ class AnalyticsPage(QWidget):
 
         today = QDate.currentDate()
         filter_bar = QWidget()
-        filter_bar.setFixedHeight(SIZE_HEADER_H)
+        filter_bar.setFixedHeight(SIZE_HEADER_H + SPACE_SM)
         filter_bar.setStyleSheet(toolbar_style(bg=_BG_SURFACE, border=_BORDER_DIM))
         fl = QHBoxLayout(filter_bar)
-        fl.setContentsMargins(SPACE_20, SPACE_SM, SPACE_20, SPACE_SM)
+        fl.setContentsMargins(SPACE_20, SPACE_XS, SPACE_20, SPACE_XS)
         fl.setSpacing(SPACE_SM)
 
         self._alarm_combo = QComboBox()
-        self._alarm_combo.addItem("All Levels", None)
+        self._alarm_combo.addItem("All severity", None)
         self._alarm_combo.addItem(">= 1", 1)
         self._alarm_combo.addItem(">= 2", 2)
         self._alarm_combo.addItem(">= 3", 3)
         self._alarm_combo.setFixedHeight(SIZE_CONTROL_MD)
         self._alarm_combo.setMinimumWidth(SIZE_FIELD_W_LG)
         self._alarm_combo.setStyleSheet(_FORM_COMBO)
-        fl.addWidget(self._alarm_combo)
 
         self._gender_combo = NoWheelComboBox()
-        self._gender_combo.addItem("All Genders", None)
+        self._gender_combo.addItem("All genders", None)
         self._gender_combo.addItem("Male", "male")
         self._gender_combo.addItem("Female", "female")
         self._gender_combo.addItem("Unknown", "unknown")
         self._gender_combo.setFixedHeight(SIZE_CONTROL_MD)
         self._gender_combo.setMinimumWidth(SIZE_FIELD_W_LG)
         self._gender_combo.setStyleSheet(_FORM_COMBO)
-        fl.addWidget(self._gender_combo)
 
         self._time_combo = QComboBox()
         self._time_combo.addItem("Local", "Local")
         self._time_combo.addItem("UTC", "UTC")
         self._time_combo.setFixedHeight(SIZE_CONTROL_MD)
-        self._time_combo.setMinimumWidth(SIZE_FIELD_W_LG)
+        self._time_combo.setMinimumWidth(SIZE_FIELD_W)
         self._time_combo.setStyleSheet(_FORM_COMBO)
-        fl.addWidget(self._time_combo)
 
         self._camera_combo = QComboBox()
-        self._camera_combo.addItem("All Cameras", None)
+        self._camera_combo.addItem("All cameras", None)
         self._camera_combo.setFixedHeight(SIZE_CONTROL_MD)
         self._camera_combo.setMinimumWidth(SIZE_FIELD_W_LG)
         self._camera_combo.setStyleSheet(_FORM_COMBO)
-        fl.addWidget(self._camera_combo)
 
         self._rule_combo = QComboBox()
-        self._rule_combo.addItem("All Rules", None)
+        self._rule_combo.addItem("All rules", None)
         self._rule_combo.setFixedHeight(SIZE_CONTROL_MD)
         self._rule_combo.setMinimumWidth(SIZE_FIELD_W_LG)
         self._rule_combo.setStyleSheet(_FORM_COMBO)
-        fl.addWidget(self._rule_combo)
 
         self._date_from = QDateEdit()
         self._date_from.setCalendarPopup(True)
@@ -211,13 +275,6 @@ class AnalyticsPage(QWidget):
         _wknd_fmt.setForeground(QColor(_TEXT_SOFT))
         _cal_from.setWeekdayTextFormat(Qt.DayOfWeek.Saturday, _wknd_fmt)
         _cal_from.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, _wknd_fmt)
-        fl.addWidget(self._date_from)
-
-        _fl_arr = QLabel("\u2192")
-        _fl_arr.setStyleSheet(_DATE_ARROW_STYLE)
-        _fl_arr.setFixedWidth(SIZE_ICON_MD)
-        _fl_arr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        fl.addWidget(_fl_arr)
 
         self._date_to = QDateEdit()
         self._date_to.setCalendarPopup(True)
@@ -234,24 +291,39 @@ class AnalyticsPage(QWidget):
         _wknd_fmt2.setForeground(QColor(_TEXT_SOFT))
         _cal_to.setWeekdayTextFormat(Qt.DayOfWeek.Saturday, _wknd_fmt2)
         _cal_to.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, _wknd_fmt2)
-        fl.addWidget(self._date_to)
+
+        fl.addWidget(self._filter_field("From", self._date_from, SIZE_FIELD_W), stretch=1)
+        fl.addWidget(self._filter_field("To", self._date_to, SIZE_FIELD_W), stretch=1)
+        fl.addWidget(self._filter_field("Camera", self._camera_combo, SIZE_FIELD_W_LG), stretch=1)
+        fl.addWidget(self._filter_field("Rule", self._rule_combo, SIZE_FIELD_W_LG), stretch=1)
+        fl.addWidget(self._filter_field("Severity", self._alarm_combo, SIZE_FIELD_W_LG), stretch=1)
+        fl.addWidget(self._filter_field("Gender", self._gender_combo, SIZE_FIELD_W_LG), stretch=1)
+        fl.addWidget(self._filter_field("Time", self._time_combo, SIZE_FIELD_W), stretch=1)
         fl.addStretch()
 
-        apply_btn = QPushButton("Apply")
-        apply_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
-        apply_btn.setStyleSheet(_PRIMARY_BTN)
-        apply_btn.clicked.connect(self._refresh)
-        fl.addWidget(apply_btn)
+        self._apply_btn = QPushButton("Apply")
+        self._apply_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
+        self._apply_btn.setStyleSheet(_PRIMARY_BTN)
+        self._apply_btn.clicked.connect(self._refresh)
+        fl.addWidget(self._apply_btn)
 
-        pdf_btn = QPushButton("Export PDF")
-        pdf_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
-        pdf_btn.setStyleSheet(_SECONDARY_BTN)
-        pdf_btn.clicked.connect(self._export_pdf)
-        fl.addWidget(pdf_btn)
+        self._pdf_btn = QPushButton("Export PDF")
+        self._pdf_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
+        self._pdf_btn.setStyleSheet(_SECONDARY_BTN)
+        self._pdf_btn.clicked.connect(self._export_pdf)
+        fl.addWidget(self._pdf_btn)
+        self._status_lbl = QLabel("")
+        self._status_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_LABEL) + " background: transparent;")
+        fl.addWidget(self._status_lbl)
         self._camera_combo.currentIndexChanged.connect(self._refresh_rules)
         self._time_combo.currentIndexChanged.connect(self._update_time_info)
         self._update_time_info()
         root.addWidget(filter_bar)
+
+        self._debug_banner = QLabel("Synthetic debug analytics data is enabled.")
+        self._debug_banner.setStyleSheet(_DEBUG_BANNER_STYLE)
+        self._debug_banner.setVisible(False)
+        root.addWidget(self._debug_banner)
 
         content_w = QWidget()
         content_w.setStyleSheet(_BG_BASE_STYLE)
@@ -266,7 +338,7 @@ class AnalyticsPage(QWidget):
         self._stat_violations = StatCardWidget("Violations", "0", "total", _DANGER_DIM)
         self._stat_compliance = StatCardWidget("Compliance", "100%", "rate", _SUCCESS_DIM)
         self._stat_faces = StatCardWidget("Identified", "0", "faces", _PURPLE_DIM)
-        self._stat_gendered = StatCardWidget("Gendered Faces", "0", "gender", _ACCENT)
+        self._stat_gendered = StatCardWidget("Gendered Violations", "0", "gender", _ACCENT)
         stats_row.addWidget(self._stat_total)
         stats_row.addWidget(self._stat_violations)
         stats_row.addWidget(self._stat_compliance)
@@ -347,11 +419,6 @@ class AnalyticsPage(QWidget):
         hm_title_lbl.setStyleSheet(section_kicker_style())
         hm_hdr_l.addWidget(hm_title_lbl)
         hm_hdr_l.addStretch()
-        reset_hm_btn = QPushButton("Reset Heatmap")
-        reset_hm_btn.setFixedSize(SIZE_BTN_W_LG, SIZE_CONTROL_MD)
-        reset_hm_btn.setStyleSheet(_SECONDARY_BTN)
-        reset_hm_btn.clicked.connect(self._reset_heatmap)
-        hm_hdr_l.addWidget(reset_hm_btn)
         _hm_sep = QWidget()
         _hm_sep.setFixedHeight(SPACE_XXXS)
         _hm_sep.setStyleSheet(divider_style(_BORDER_DIM))
@@ -382,20 +449,74 @@ class AnalyticsPage(QWidget):
 
         tab_card_vbox.addWidget(self._a_stack, stretch=1)
         layout.addWidget(tab_card, stretch=1)
-        self._switch_analytics_tab(0)
+        saved_tab = int(self._settings.value("tabs/current", 0, type=int) or 0)
+        self._switch_analytics_tab(saved_tab if 0 <= saved_tab < len(self._a_tab_btns) else 0)
 
     def _switch_analytics_tab(self, idx: int) -> None:
         self._a_stack.setCurrentIndex(idx)
         for i, btn in enumerate(self._a_tab_btns):
             btn.setStyleSheet(_A_TAB_BTN_ACTIVE if i == idx else _A_TAB_BTN)
+        self._settings.setValue("tabs/current", idx)
 
     def on_activated(self):
         self._refresh_cameras()
+        self._load_filters()
+        self._refresh_rules()
         self._refresh()
+
+    def on_unload(self) -> None:
+        self._cleanup_load_worker()
+        self._cleanup_pdf_worker()
+
+    def _cleanup_load_worker(self) -> None:
+        worker = self._load_worker
+        self._load_worker = None
+        if worker is None:
+            return
+        with contextlib.suppress(Exception):
+            worker.finished_load.disconnect()
+        with contextlib.suppress(Exception):
+            worker.finished.disconnect()
+        if worker.isRunning():
+            worker.setParent(None)
+            _RETIRED_ANALYTICS_WORKERS.add(worker)
+
+            def _cleanup(w=worker):
+                _RETIRED_ANALYTICS_WORKERS.discard(w)
+                with contextlib.suppress(Exception):
+                    w.deleteLater()
+
+            worker.finished.connect(_cleanup)
+        else:
+            with contextlib.suppress(Exception):
+                worker.deleteLater()
+
+    def _cleanup_pdf_worker(self) -> None:
+        worker = self._pdf_worker
+        self._pdf_worker = None
+        if worker is None:
+            return
+        with contextlib.suppress(Exception):
+            worker.finished_export.disconnect()
+        with contextlib.suppress(Exception):
+            worker.finished.disconnect()
+        if worker.isRunning():
+            worker.setParent(None)
+            _RETIRED_PDF_WORKERS.add(worker)
+
+            def _cleanup(w=worker):
+                _RETIRED_PDF_WORKERS.discard(w)
+                with contextlib.suppress(Exception):
+                    w.deleteLater()
+
+            worker.finished.connect(_cleanup)
+        else:
+            with contextlib.suppress(Exception):
+                worker.deleteLater()
 
     def _refresh_cameras(self):
         self._camera_combo.clear()
-        self._camera_combo.addItem("All Cameras", None)
+        self._camera_combo.addItem("All cameras", None)
         cameras = db.get_cameras()
         for cam in cameras:
             self._camera_combo.addItem(cam["name"], cam["id"])
@@ -404,7 +525,7 @@ class AnalyticsPage(QWidget):
     def _refresh_rules(self):
         current = self._rule_combo.currentData()
         self._rule_combo.clear()
-        self._rule_combo.addItem("All Rules", None)
+        self._rule_combo.addItem("All rules", None)
         cam_id = self._camera_combo.currentData()
         rules = db.get_rules(enabled_only=True, camera_id=cam_id)
         seen = set()
@@ -418,6 +539,38 @@ class AnalyticsPage(QWidget):
             idx = self._rule_combo.findData(current)
             if idx >= 0:
                 self._rule_combo.setCurrentIndex(idx)
+
+    @staticmethod
+    def _set_combo_data(combo: QComboBox, value) -> None:
+        idx = combo.findData(value)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def _load_filters(self) -> None:
+        self._set_combo_data(self._alarm_combo, self._settings.value("filters/alarm_level", None))
+        self._set_combo_data(self._gender_combo, self._settings.value("filters/gender", None))
+        self._set_combo_data(self._time_combo, self._settings.value("filters/time_basis", "Local"))
+        cam_value = self._settings.value("filters/camera_id", None)
+        try:
+            cam_value = int(cam_value) if cam_value not in (None, "", "None") else None
+        except (TypeError, ValueError):
+            cam_value = None
+        self._set_combo_data(self._camera_combo, cam_value)
+        self._refresh_rules()
+        self._set_combo_data(self._rule_combo, self._settings.value("filters/rule_name", None))
+        for key, widget in (("filters/date_from", self._date_from), ("filters/date_to", self._date_to)):
+            saved = str(self._settings.value(key, "") or "")
+            qdate = QDate.fromString(saved, "yyyy-MM-dd")
+            if qdate.isValid():
+                widget.setDate(qdate)
+
+    def _save_filters(self) -> None:
+        self._settings.setValue("filters/alarm_level", self._alarm_combo.currentData())
+        self._settings.setValue("filters/gender", self._gender_combo.currentData())
+        self._settings.setValue("filters/time_basis", self._time_combo.currentData())
+        self._settings.setValue("filters/camera_id", self._camera_combo.currentData())
+        self._settings.setValue("filters/rule_name", self._rule_combo.currentData())
+        self._settings.setValue("filters/date_from", self._date_from.date().toString("yyyy-MM-dd"))
+        self._settings.setValue("filters/date_to", self._date_to.date().toString("yyyy-MM-dd"))
 
     def _update_time_info(self):
         basis = self._time_combo.currentData() or self._time_combo.currentText()
@@ -452,45 +605,103 @@ class AnalyticsPage(QWidget):
         )
 
     def _refresh(self):
+        self._save_filters()
         date_from, date_to, _basis = self._get_time_bounds()
-        camera_id = self._camera_combo.currentData()
-        rule_name = self._rule_combo.currentData()
-        min_alarm_level = self._alarm_combo.currentData()
-        gender = self._gender_combo.currentData()
-        summary = stats_engine.get_summary(date_from, date_to, camera_id, min_alarm_level=min_alarm_level, gender=gender)
-        total = summary.get("total_detections", 0) or 0
-        violations = summary.get("violations", 0) or 0
-        compliant = total - violations
-        rate = (compliant / total * 100) if total > 0 else 100.0
-        identified = stats_engine.get_identified_count(
-            date_from=date_from,
-            date_to=date_to,
-            camera_id=camera_id,
-            rule_name=rule_name,
-            min_alarm_level=min_alarm_level,
-            gender=gender,
-        )
+        options = {
+            "date_from": date_from,
+            "date_to": date_to,
+            "time_basis": _basis,
+            "camera_id": self._camera_combo.currentData(),
+            "rule_name": self._rule_combo.currentData(),
+            "min_alarm_level": self._alarm_combo.currentData(),
+            "gender": self._gender_combo.currentData(),
+        }
+        if self._load_worker is not None and self._load_worker.isRunning():
+            self._pending_refresh = True
+            self._status_lbl.setText("Refresh queued")
+            return
+        self._refresh_seq += 1
+        request_id = self._refresh_seq
+        self._set_loading_state(True)
+        worker = _AnalyticsLoadWorker(request_id, options, self)
+        self._load_worker = worker
+        worker.finished_load.connect(self._on_analytics_loaded)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _set_loading_state(self, loading: bool) -> None:
+        self._apply_btn.setEnabled(not loading)
+        if loading:
+            self._status_lbl.setText("Loading")
+            self._debug_banner.setVisible(False)
+            self._stat_total.set_value("...")
+            self._stat_violations.set_value("...")
+            self._stat_compliance.set_value("...")
+            self._stat_faces.set_value("...")
+            self._stat_gendered.set_value("...")
+            self._compliance_chart.set_empty_state("Loading analytics...")
+            self._violation_chart.set_empty_state("Loading analytics...")
+            self._camera_chart.set_empty_state("Loading analytics...")
+            self._heatmap_widget.set_placeholder("Loading heatmap...")
+            self._clear_top_violators("Loading analytics...")
+        else:
+            self._status_lbl.setText("")
+
+    def _on_analytics_loaded(self, request_id: int, ok: bool, model: object, message: str) -> None:
+        worker = self._load_worker
+        self._load_worker = None
+        if worker is not None:
+            with contextlib.suppress(Exception):
+                worker.finished_load.disconnect(self._on_analytics_loaded)
+        if request_id != self._refresh_seq:
+            return
+        self._set_loading_state(False)
+        if ok and isinstance(model, dict):
+            self._apply_model(model)
+        else:
+            self._show_load_error(message)
+        if self._pending_refresh:
+            self._pending_refresh = False
+            self._refresh()
+
+    def _clear_top_violators(self, message: str | None = None) -> None:
+        while self._tv_layout.count():
+            item = self._tv_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        if message:
+            empty_lbl = QLabel(message)
+            empty_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_BODY) + " background: transparent;")
+            self._tv_layout.addWidget(empty_lbl)
+
+    def _show_load_error(self, message: str) -> None:
+        text = str(message or "Analytics refresh failed")
+        self._status_lbl.setText("Refresh failed")
+        self._debug_banner.setVisible(False)
+        self._compliance_chart.set_empty_state(text)
+        self._violation_chart.set_empty_state(text)
+        self._camera_chart.set_empty_state(text)
+        self._heatmap_widget.set_placeholder(text)
+        self._clear_top_violators(text)
+
+    def _apply_model(self, model: dict) -> None:
+        stats = model["stats"]
+        total = stats["total"]
+        violations = stats["violations"]
+        rate = stats["compliance_rate"]
+        identified = stats["identified"]
         self._stat_total.set_value(str(total))
         self._stat_violations.set_value(str(violations))
         self._stat_compliance.set_value(f"{rate:.0f}%")
         self._stat_faces.set_value(str(identified))
-        gender_rows = stats_engine.get_gender_violations(
-            date_from=date_from,
-            date_to=date_to,
-            camera_id=camera_id,
-            rule_name=rule_name,
-            min_alarm_level=min_alarm_level,
-            gender=gender,
-        )
-        gender_counts = {row.get("gender", "unknown"): int(row.get("count", 0) or 0) for row in gender_rows}
-        self._stat_gendered.set_value(str(gender_counts.get("male", 0) + gender_counts.get("female", 0)))
+        gender_counts = stats["gender_counts"]
+        self._stat_gendered.set_value(str(stats["gendered"]))
         self._gender_breakdown_lbl.setText(
             f"Gender split: Male {gender_counts.get('male', 0)} | Female {gender_counts.get('female', 0)} | Unknown {gender_counts.get('unknown', 0)}"
         )
+        self._debug_banner.setVisible(bool(model.get("is_dummy")))
         self._compliance_chart.clear_data()
-        trend = stats_engine.get_compliance_trend(
-            rule_name=rule_name, date_from=date_from, date_to=date_to, camera_id=camera_id, time_basis=_basis, gender=gender
-        )
+        trend = model["trend"]
         if trend:
             x_idx = list(range(len(trend)))
             values = [float(t["rate"]) for t in trend]
@@ -500,15 +711,7 @@ class AnalyticsPage(QWidget):
             self._compliance_chart.set_empty_state("No compliance data")
 
         self._violation_chart.clear_data()
-        hourly = stats_engine.get_hourly_violation_chart(
-            date_from,
-            date_to,
-            camera_id=camera_id,
-            rule_name=rule_name,
-            min_alarm_level=min_alarm_level,
-            time_basis=_basis,
-            gender=gender,
-        )
+        hourly = model["hourly"]
         if hourly:
             x_idx = list(range(len(hourly)))
             counts = [float(h["count"]) for h in hourly]
@@ -521,7 +724,7 @@ class AnalyticsPage(QWidget):
             self._violation_chart.set_empty_state("No violations in this range")
 
         self._camera_chart.clear_data()
-        cam_data = stats_engine.get_camera_activity_data(date_from, date_to, camera_id=camera_id)
+        cam_data = model["camera_activity"]
         if cam_data:
             cam_idx = list(range(len(cam_data)))
             cam_counts = [float(c["count"]) for c in cam_data]
@@ -530,32 +733,14 @@ class AnalyticsPage(QWidget):
         else:
             self._camera_chart.set_empty_state("No camera activity")
 
-        if camera_id is None:
-            self._heatmap_widget.set_placeholder("Select a camera to view heatmap")
+        if model["heatmap"] is not None:
+            self._heatmap_widget.set_heatmap(model["heatmap"])
         else:
-            gen = get_generator(camera_id)
-            heatmap = gen.generate() if gen.has_data() else None
-            if heatmap is None:
-                heatmap = generate_heatmap_from_db(
-                    camera_id=camera_id,
-                    date_from=date_from,
-                    date_to=date_to,
-                )
-            if heatmap is not None:
-                self._heatmap_widget.set_heatmap(heatmap)
-            else:
-                self._heatmap_widget.set_placeholder("No heatmap data in selected range")
-        while self._tv_layout.count():
-            item = self._tv_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        top = stats_engine.get_person_violations(
-            date_from, date_to, camera_id=camera_id, rule_name=rule_name, min_alarm_level=min_alarm_level, limit=10, gender=gender
-        )
+            self._heatmap_widget.set_placeholder(model["heatmap_placeholder"])
+        self._clear_top_violators()
+        top = model["top_violators"]
         if not top:
-            empty_lbl = QLabel("No violators in this range.")
-            empty_lbl.setStyleSheet(muted_label_style(size=FONT_SIZE_BODY) + " background: transparent;")
-            self._tv_layout.addWidget(empty_lbl)
+            self._clear_top_violators("No violators in this range.")
             return
         for rank, person in enumerate(top, 1):
             card = QFrame()
@@ -598,38 +783,43 @@ class AnalyticsPage(QWidget):
 
             self._tv_layout.addWidget(card)
 
-    def _reset_heatmap(self):
-        cam_id = self._camera_combo.currentData()
-        if cam_id is None:
-            self._heatmap_widget.set_placeholder("Select a camera to view heatmap")
-            return
-        get_generator(cam_id).reset()
-        self._heatmap_widget.clear_heatmap()
-
     def _export_pdf(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export PDF Report", "report.pdf", "PDF Files (*.pdf)")
         if not path:
             return
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
         date_from, date_to, basis = self._get_time_bounds()
         camera_id = self._camera_combo.currentData()
         rule_name = self._rule_combo.currentData()
         min_alarm_level = self._alarm_combo.currentData()
         gender = self._gender_combo.currentData()
-        try:
-            report_generator.generate_report(
-                path,
-                date_from,
-                date_to,
-                camera_id,
-                rule_name=rule_name,
-                min_alarm_level=min_alarm_level,
-                time_basis=basis,
-                gender=gender,
-            )
-            QMessageBox.information(self, "PDF Exported", f"Report saved to {path}")
-        except (OSError, ValueError, RuntimeError) as e:
-            QMessageBox.warning(self, "Error", f"Failed to export PDF:\n{e}")
-        except (RuntimeError, AttributeError, TypeError, ValueError, OSError) as e:
-            logger.exception("Unexpected PDF export failure")
-            QMessageBox.warning(self, "Error", f"Failed to export PDF:\n{e}")
+        if self._pdf_worker is not None and self._pdf_worker.isRunning():
+            QMessageBox.information(self, "PDF Export", "A PDF export is already running.")
+            return
+        options = {
+            "date_from": date_from,
+            "date_to": date_to,
+            "camera_id": camera_id,
+            "rule_name": rule_name,
+            "min_alarm_level": min_alarm_level,
+            "time_basis": basis,
+            "gender": gender,
+        }
+        self._pdf_btn.setEnabled(False)
+        self._pdf_btn.setText("Exporting...")
+        self._pdf_worker = _PdfExportWorker(path, options, self)
+
+        def _done(ok: bool, message: str):
+            self._pdf_worker = None
+            self._pdf_btn.setEnabled(True)
+            self._pdf_btn.setText("Export PDF")
+            if ok:
+                QMessageBox.information(self, "PDF Exported", f"Report saved to {message}")
+            else:
+                QMessageBox.warning(self, "Error", f"Failed to export PDF:\n{message}")
+
+        self._pdf_worker.finished_export.connect(_done)
+        self._pdf_worker.finished.connect(self._pdf_worker.deleteLater)
+        self._pdf_worker.start()
 

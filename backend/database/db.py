@@ -2,6 +2,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import hashlib
 import secrets
 import sqlite3
@@ -142,6 +143,31 @@ _SEC_QUESTIONS_DEFAULT = (
     "What city were you born in?",
     "What is your pet name?",
 )
+_SETTING_DEFAULTS = {
+    "theme": {"value": "dark", "type": "string", "label": "UI Theme", "section": "appearance"},
+    "theme_json_path": {"value": "", "type": "string", "label": "Theme JSON Path", "section": "general"},
+    "log_retention_days": {"value": "90", "type": "int", "label": "Log Retention (days)", "section": "data"},
+    "logs_auto_refresh_enabled": {"value": "0", "type": "bool", "label": "Auto-refresh Logs", "section": "data"},
+    "runtime_metrics_enabled": {"value": "1", "type": "bool", "label": "Record Runtime Metrics", "section": "reports"},
+    "auto_start_cameras": {"value": "0", "type": "bool", "label": "Auto-start cameras on launch", "section": "general"},
+    "minimize_to_tray": {"value": "0", "type": "bool", "label": "Minimize to tray", "section": "general"},
+    "popup_notifications_enabled": {"value": "1", "type": "bool", "label": "Popup notifications", "section": "notifications"},
+    "debug_mode_enabled": {"value": "0", "type": "bool", "label": "Debugging mode", "section": "general"},
+    "experimental_mode_enabled": {"value": "0", "type": "bool", "label": "Experimental settings", "section": "general"},
+    "liveness_check_global": {"value": "0", "type": "bool", "label": "Require Liveness Globally", "section": "detection"},
+    "liveness_skip_presentation_for_stream_sources": {
+        "value": "1",
+        "type": "bool",
+        "label": "Skip Presentation Block For Stream Sources",
+        "section": "detection",
+    },
+}
+_DYNAMIC_SETTING_PATTERNS = (
+    re.compile(r"^camera_\d+_max_faces$"),
+    re.compile(r"^camera_\d+_min_face_size$"),
+    re.compile(r"^camera_\d+_plugins_explicit$"),
+)
+_ALLOWED_SETTING_TYPES = {"string", "int", "float", "bool", "json"}
 
 
 def init(db_path):
@@ -173,7 +199,7 @@ def init(db_path):
     try:
         tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
         if "cameras" not in tables:
-            logging.getLogger(__name__).warning("Essential table 'cameras' missing — attempting to reapply schema.sql")
+            logging.getLogger(__name__).warning("Essential table 'cameras' missing - attempting to reapply schema.sql")
             try:
                 with open(schema_path) as f:
                     conn.executescript(f.read())
@@ -189,21 +215,28 @@ def get_conn():
 
 
 def close():
+    global _writer_thread, _writer_thread_id, _writer_conn
     _writer_stop.set()
     wait_for_writer_idle(timeout_sec=5.0)
     conn = getattr(_conn_local, "conn", None)
     if conn:
         conn.close()
         _conn_local.conn = None
+    writer = _writer_thread
+    if writer and writer.is_alive():
+        try:
+            _write_queue.put(None, timeout=2.0)
+        except Exception:
+            pass
     try:
-        _write_queue.put(None, timeout=2.0)
+        if writer and writer.is_alive():
+            writer.join(timeout=2.0)
     except Exception:
         pass
-    try:
-        if _writer_thread and _writer_thread.is_alive():
-            _writer_thread.join(timeout=2.0)
-    except Exception:
-        pass
+    if writer is _writer_thread and (writer is None or not writer.is_alive()):
+        _writer_thread = None
+        _writer_thread_id = None
+        _writer_conn = None
 
 
 def _normalize_email(email: str) -> str:
@@ -217,6 +250,14 @@ def is_bootstrap_admin_email(email: str) -> bool:
 def get_bootstrap_admin_account():
     row = _conn.execute("SELECT * FROM accounts WHERE email=?", (_DEFAULT_ADMIN_EMAIL,)).fetchone()
     return _row_to_account(row) if row else None
+
+
+def _admin_account_count(exclude_id: int | None = None) -> int:
+    if exclude_id is None:
+        row = _conn.execute("SELECT COUNT(*) AS count FROM accounts WHERE is_admin=1").fetchone()
+    else:
+        row = _conn.execute("SELECT COUNT(*) AS count FROM accounts WHERE is_admin=1 AND id!=?", (exclude_id,)).fetchone()
+    return int(row["count"] if row else 0)
 
 
 def reconcile_bootstrap_state() -> bool:
@@ -308,6 +349,23 @@ def _write_call(fn):
     if err:
         raise err
     return res
+
+
+def write_transaction(fn):
+    def _op(conn):
+        result = fn(conn)
+        conn.commit()
+        return result
+
+    return _write_call(_op)
+
+
+def get_setting_defaults(keys=None):
+    if keys is None:
+        selected = _SETTING_DEFAULTS
+    else:
+        selected = {key: _SETTING_DEFAULTS[key] for key in keys if key in _SETTING_DEFAULTS}
+    return {key: dict(value) for key, value in selected.items()}
 
 
 def _hash_password(password: str, salt: str | None = None):
@@ -438,6 +496,8 @@ def create_account(
 
 def update_account(account_id: int, *, email=None, password=None, allowed_tabs=None, is_admin=None, security=None, avatar_path=None, username=None):
     current = get_account(account_id)
+    if current and current.get("is_admin") and is_admin is False and _admin_account_count(exclude_id=account_id) <= 0:
+        raise ValueError("At least one administrator account is required.")
     sets = []
     vals = []
     password_updated = False
@@ -495,6 +555,8 @@ def update_account(account_id: int, *, email=None, password=None, allowed_tabs=N
 
 def delete_account(account_id: int):
     account = get_account(account_id)
+    if account and account.get("is_admin") and _admin_account_count(exclude_id=account_id) <= 0:
+        raise ValueError("At least one administrator account is required.")
     _write_execute("DELETE FROM accounts WHERE id=?", (account_id,))
     if account and is_bootstrap_admin_email(account.get("email", "")):
         _clear_bootstrap_token()
@@ -804,25 +866,28 @@ def get_plugin_cameras(plugin_id):
 
 
 def assign_camera_plugin_class(camera_id, plugin_class_id, enabled=1, confidence=None):
+    enabled_value = 1 if enabled in (1, True, "1", "true") else 0
 
-    try:
-        _conn.execute(
-            "INSERT INTO camera_plugin_classes (camera_id, plugin_class_id, enabled, confidence) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(camera_id, plugin_class_id) DO UPDATE SET enabled=excluded.enabled, confidence=excluded.confidence",
-            (camera_id, plugin_class_id, 1 if enabled in (1, True, "1", "true") else 0, confidence),
-        )
-        _conn.commit()
-    except Exception:
-        cur = _conn.execute(
-            "UPDATE camera_plugin_classes SET enabled=?, confidence=? WHERE camera_id=? AND plugin_class_id=?",
-            (1 if enabled in (1, True, "1", "true") else 0, confidence, camera_id, plugin_class_id),
-        )
-        if cur.rowcount == 0:
-            _conn.execute(
-                "INSERT OR IGNORE INTO camera_plugin_classes (camera_id, plugin_class_id, enabled, confidence) VALUES (?, ?, ?, ?)",
-                (camera_id, plugin_class_id, 1 if enabled in (1, True, "1", "true") else 0, confidence),
+    def _op(conn):
+        try:
+            conn.execute(
+                "INSERT INTO camera_plugin_classes (camera_id, plugin_class_id, enabled, confidence) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(camera_id, plugin_class_id) DO UPDATE SET enabled=excluded.enabled, confidence=excluded.confidence",
+                (camera_id, plugin_class_id, enabled_value, confidence),
             )
-            _conn.commit()
+        except Exception:
+            cur = conn.execute(
+                "UPDATE camera_plugin_classes SET enabled=?, confidence=? WHERE camera_id=? AND plugin_class_id=?",
+                (enabled_value, confidence, camera_id, plugin_class_id),
+            )
+            if cur.rowcount == 0:
+                conn.execute(
+                    "INSERT OR IGNORE INTO camera_plugin_classes (camera_id, plugin_class_id, enabled, confidence) VALUES (?, ?, ?, ?)",
+                    (camera_id, plugin_class_id, enabled_value, confidence),
+                )
+        conn.commit()
+
+    _write_call(_op)
 
 
 def get_camera_plugin_classes(camera_id, plugin_id):
@@ -1187,6 +1252,49 @@ def _normalize_detections_payload(payload):
     return data
 
 
+def _serialize_rules_triggered(rules_triggered):
+    if rules_triggered is None:
+        return None
+    if isinstance(rules_triggered, str):
+        return rules_triggered
+    return json.dumps(_json_safe_value(rules_triggered))
+
+
+def _is_liveness_failure_record(record: dict) -> bool:
+    rules_text = (_serialize_rules_triggered(record.get("rules_triggered")) or "").lower()
+    snapshot_path = str(record.get("snapshot_path") or "").lower()
+    return "livenessfailure" in rules_text or "liveness_fail" in snapshot_path
+
+
+def _has_identity_value(identity: str) -> int:
+    ident_text = (identity or "").strip().lower()
+    return 1 if ident_text and ident_text != "unknown" else 0
+
+
+def _prepare_detection_log_values(record: dict, *, include_timestamp: bool = False):
+    det_norm = _normalize_detections_payload(record.get("detections"))
+    identity = _identity_to_text(record.get("identity"))
+    if not identity:
+        identity = _identity_to_text(det_norm.get("identity"))
+    gender_norm = _normalize_gender_value(record.get("gender") or det_norm.get("gender"))
+    values = [
+        record.get("camera_id"),
+        record.get("zone_id"),
+        identity,
+        float(record.get("face_confidence") or 0.0),
+        json.dumps(det_norm),
+        gender_norm,
+        _serialize_rules_triggered(record.get("rules_triggered")),
+        int(record.get("alarm_level") or 0),
+        record.get("snapshot_path") or "",
+        int(record.get("reviewed") or 0),
+        _has_identity_value(identity),
+    ]
+    if include_timestamp:
+        values.insert(0, record.get("timestamp") or datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))
+    return tuple(values)
+
+
 def _db_size_bytes() -> int:
     if not _DB_PATH:
         return 0
@@ -1211,30 +1319,106 @@ def can_persist_events() -> bool:
 
 
 def add_detection_log(camera_id, identity=None, face_confidence=0.0, detections=None, rules_triggered=None, alarm_level=0, snapshot_path=""):
+    record = {
+        "camera_id": camera_id,
+        "identity": identity,
+        "face_confidence": face_confidence,
+        "detections": detections,
+        "rules_triggered": rules_triggered,
+        "alarm_level": alarm_level,
+        "snapshot_path": snapshot_path,
+    }
+    if _is_liveness_failure_record(record):
+        return None
     if is_db_size_over_limit():
         logging.getLogger(__name__).warning("Skipping detection log: database size limit reached")
         return None
-    det_norm = _normalize_detections_payload(detections) if isinstance(detections, dict) else _normalize_detections_payload(detections)
-    det_json = json.dumps(det_norm)
-    rules_json = json.dumps(rules_triggered) if isinstance(rules_triggered, list) else rules_triggered
-    gender_norm = _normalize_gender_value(det_norm.get("gender"))
-    identity = _identity_to_text(identity)
-    ident_text = identity.lower()
-    has_identity = 1 if ident_text and ident_text != "unknown" else 0
+    values = _prepare_detection_log_values(record)
     cur = _write_execute(
-        "INSERT INTO detection_logs (camera_id, zone_id, identity, face_confidence, detections, gender_norm, rules_triggered, alarm_level, snapshot_path, has_identity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (camera_id, None, identity, face_confidence, det_json, gender_norm, rules_json, alarm_level, snapshot_path, has_identity),
+        "INSERT INTO detection_logs "
+        "(camera_id, zone_id, identity, face_confidence, detections, gender_norm, rules_triggered, alarm_level, snapshot_path, reviewed, has_identity) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        values,
     )
     return cur.lastrowid
 
 
-def get_detection_logs(
-    camera_id=None, date_from=None, date_to=None, identity=None, rule_name=None, alarm_level=None, reviewed=None, limit=500
+def seed_detection_logs(rows, *, ignore_size_limit: bool = False) -> int:
+    if not rows:
+        return 0
+    if not ignore_size_limit and is_db_size_over_limit():
+        logging.getLogger(__name__).warning("Skipping detection log seed: database size limit reached")
+        return 0
+    prepared = [
+        _prepare_detection_log_values(dict(row), include_timestamp=True)
+        for row in rows
+        if not _is_liveness_failure_record(dict(row))
+    ]
+    if not prepared:
+        return 0
+
+    def _op(conn):
+        conn.executemany(
+            "INSERT INTO detection_logs "
+            "(timestamp, camera_id, zone_id, identity, face_confidence, detections, gender_norm, rules_triggered, alarm_level, snapshot_path, reviewed, has_identity) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            prepared,
+        )
+        conn.commit()
+        return len(prepared)
+
+    return _write_call(_op)
+
+
+_LOG_OBJECT_IGNORED_KEYS = (
+    "identity",
+    "gender",
+    "age_group",
+    "all_faces",
+    "frame_w",
+    "frame_h",
+    "camera_name",
+)
+
+
+def _internal_liveness_exclusion(alias: str | None = None) -> str:
+    prefix = f"{alias}." if alias else ""
+    return (
+        f" AND LOWER(COALESCE({prefix}rules_triggered, '')) NOT LIKE '%livenessfailure%'"
+        f" AND LOWER(COALESCE({prefix}snapshot_path, '')) NOT LIKE '%liveness_fail%'"
+    )
+
+
+def _append_rule_name_filter(q: str, params: list, column: str, rule_name) -> str:
+    name = str(rule_name or "").strip()
+    if not name:
+        return q
+    q += (
+        f" AND (EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid({column}) THEN {column} ELSE '[]' END) WHERE value=?) "
+        f"OR {column}=?)"
+    )
+    params.extend([name, name])
+    return q
+
+
+def _detection_log_filter_sql(
+    *,
+    camera_id=None,
+    date_from=None,
+    date_to=None,
+    identity=None,
+    search=None,
+    rule_name=None,
+    alarm_level=None,
+    reviewed=None,
+    log_type=None,
+    gender=None,
 ):
     q = """SELECT dl.*, c.name as camera_name
            FROM detection_logs dl
            LEFT JOIN cameras c ON dl.camera_id=c.id
            WHERE 1=1"""
+    q += _internal_liveness_exclusion("dl")
     params = []
     if camera_id is not None:
         q += " AND dl.camera_id=?"
@@ -1245,26 +1429,108 @@ def get_detection_logs(
     if date_to:
         q += " AND dl.timestamp<=?"
         params.append(date_to)
-    if identity:
-        q += " AND (dl.identity LIKE ? OR dl.detections LIKE ?)"
-        like = f"%{identity}%"
-        params.append(like)
-        params.append(like)
-    if rule_name:
-        q += " AND dl.rules_triggered LIKE ?"
-        params.append(f"%{rule_name}%")
+
+    search_text = str(search or identity or "").strip()
+    if search_text:
+        q += (
+            " AND (dl.identity LIKE ? OR dl.gender_norm LIKE ? OR dl.rules_triggered LIKE ? "
+            "OR dl.detections LIKE ? OR c.name LIKE ?)"
+        )
+        like = f"%{search_text}%"
+        params.extend([like, like, like, like, like])
+    q = _append_rule_name_filter(q, params, "dl.rules_triggered", rule_name)
     if alarm_level is not None:
         q += " AND dl.alarm_level>=?"
-        params.append(alarm_level)
+        params.append(int(alarm_level))
     if reviewed is not None:
         q += " AND dl.reviewed=?"
-        params.append(reviewed)
-    q += " ORDER BY dl.timestamp DESC LIMIT ?"
-    params.append(limit)
+        params.append(1 if int(reviewed) else 0)
+    if gender:
+        q += " AND dl.gender_norm=?"
+        params.append(_normalize_gender_value(gender))
+
+    normalized_type = str(log_type or "").strip().lower()
+    if normalized_type == "violation":
+        q += " AND dl.alarm_level>=1"
+    elif normalized_type == "face":
+        q += (
+            " AND (dl.has_identity=1 OR (json_valid(dl.detections) "
+            "AND COALESCE(json_array_length(json_extract(dl.detections, '$.all_faces')), 0)>0))"
+        )
+    elif normalized_type == "object":
+        ignored_placeholders = ",".join("?" for _ in _LOG_OBJECT_IGNORED_KEYS)
+        q += (
+            " AND json_valid(dl.detections) AND ("
+            "COALESCE(json_array_length(json_extract(dl.detections, '$.object_bboxes')), 0)>0 "
+            "OR COALESCE(json_array_length(json_extract(dl.detections, '$.objects')), 0)>0 "
+            f"OR EXISTS (SELECT 1 FROM json_each(dl.detections) WHERE key NOT IN ({ignored_placeholders}))"
+            ")"
+        )
+        params.extend(_LOG_OBJECT_IGNORED_KEYS)
+    return q, params
+
+
+def get_detection_logs(
+    camera_id=None,
+    date_from=None,
+    date_to=None,
+    identity=None,
+    search=None,
+    rule_name=None,
+    alarm_level=None,
+    reviewed=None,
+    log_type=None,
+    gender=None,
+    limit=500,
+    offset=0,
+):
+    q, params = _detection_log_filter_sql(
+        camera_id=camera_id,
+        date_from=date_from,
+        date_to=date_to,
+        identity=identity,
+        search=search,
+        rule_name=rule_name,
+        alarm_level=alarm_level,
+        reviewed=reviewed,
+        log_type=log_type,
+        gender=gender,
+    )
+    q += " ORDER BY dl.timestamp DESC LIMIT ? OFFSET ?"
+    params.append(max(1, int(limit or 1)))
+    params.append(max(0, int(offset or 0)))
     rows = [dict(r) for r in _conn.execute(q, params).fetchall()]
     for row in rows:
         row["detections"] = json.dumps(_normalize_detections_payload(row.get("detections")))
     return rows
+
+
+def count_detection_logs(
+    camera_id=None,
+    date_from=None,
+    date_to=None,
+    identity=None,
+    search=None,
+    rule_name=None,
+    alarm_level=None,
+    reviewed=None,
+    log_type=None,
+    gender=None,
+):
+    q, params = _detection_log_filter_sql(
+        camera_id=camera_id,
+        date_from=date_from,
+        date_to=date_to,
+        identity=identity,
+        search=search,
+        rule_name=rule_name,
+        alarm_level=alarm_level,
+        reviewed=reviewed,
+        log_type=log_type,
+        gender=gender,
+    )
+    count_q = f"SELECT COUNT(*) FROM ({q})"
+    return int(_conn.execute(count_q, params).fetchone()[0] or 0)
 
 
 def add_notification_profile(name, ntype, endpoint, auth_token=""):
@@ -1435,6 +1701,31 @@ def delete_clip(path: str):
     _write_execute("DELETE FROM clips WHERE path=?", (path,))
 
 
+def clear_snapshot_path(path: str) -> int:
+    if not path:
+        return 0
+    cur = _write_execute(
+        "UPDATE detection_logs SET snapshot_path='' WHERE snapshot_path=?",
+        (path,),
+    )
+    return int(cur.rowcount or 0)
+
+
+def get_snapshot_logs(limit: int | None = 150):
+    q = """SELECT dl.id, dl.timestamp, dl.camera_id, dl.snapshot_path, dl.rules_triggered, c.name as camera_name
+           FROM detection_logs dl
+           LEFT JOIN cameras c ON dl.camera_id=c.id
+           WHERE dl.snapshot_path IS NOT NULL AND dl.snapshot_path!=''
+           AND LOWER(COALESCE(dl.rules_triggered, '')) NOT LIKE '%livenessfailure%'
+           AND LOWER(COALESCE(dl.snapshot_path, '')) NOT LIKE '%liveness_fail%'
+           ORDER BY dl.timestamp DESC"""
+    params = []
+    if limit is not None:
+        q += " LIMIT ?"
+        params.append(max(1, int(limit or 150)))
+    return [dict(r) for r in _conn.execute(q, params).fetchall()]
+
+
 def get_clips(
     camera_id: int | None = None,
     ts_from: int | None = None,
@@ -1443,6 +1734,7 @@ def get_clips(
     object_type: str | None = None,
     rule_triggered: str | None = None,
     limit: int | None = 500,
+    offset: int | None = 0,
 ):
     q = "SELECT * FROM clips WHERE 1=1"
     params = []
@@ -1459,15 +1751,18 @@ def get_clips(
         q += " AND face_label LIKE ?"
         params.append(f"%{face_label}%")
     if rule_triggered:
-        q += " AND rules_triggered LIKE ?"
-        params.append(f"%{rule_triggered}%")
+        q += " AND json_valid(rules_triggered) AND EXISTS (SELECT 1 FROM json_each(clips.rules_triggered) WHERE value=?)"
+        params.append(rule_triggered)
     if object_type:
-        q += " AND object_types LIKE ?"
-        params.append(f"%{object_type}%")
+        q += " AND json_valid(object_types) AND EXISTS (SELECT 1 FROM json_each(clips.object_types) WHERE value=?)"
+        params.append(object_type)
     q += " ORDER BY ts DESC"
     if limit is not None:
         q += " LIMIT ?"
         params.append(max(1, int(limit or 500)))
+        if offset:
+            q += " OFFSET ?"
+            params.append(max(0, int(offset or 0)))
     rows = _conn.execute(q, params).fetchall()
     return [dict(r) for r in rows]
 
@@ -1492,11 +1787,41 @@ def export_settings_json():
 
 
 def import_settings_json(data):
+    if not isinstance(data, dict):
+        raise ValueError("Settings import must be a JSON object.")
+    current_keys = {row["key"] for row in get_all_settings()}
+    allowed_keys = current_keys | set(_SETTING_DEFAULTS.keys())
+    normalized = {}
+    for key, info in data.items():
+        key = str(key or "").strip()
+        if not key:
+            raise ValueError("Settings import contains an empty key.")
+        if key not in allowed_keys and not any(pattern.match(key) for pattern in _DYNAMIC_SETTING_PATTERNS):
+            raise ValueError(f"Unknown setting key: {key}")
+        if not isinstance(info, dict):
+            raise ValueError(f"Setting {key} must be an object.")
+        vtype = str(info.get("type", "string") or "string").strip().lower()
+        if vtype not in _ALLOWED_SETTING_TYPES:
+            raise ValueError(f"Invalid type for setting {key}: {vtype}")
+        value = info.get("value", "")
+        if vtype == "json" and not isinstance(value, str):
+            value = json.dumps(value)
+        elif value is None:
+            value = ""
+        else:
+            value = str(value)
+        normalized[key] = {
+            "value": value,
+            "type": vtype,
+            "label": str(info.get("label", "") or ""),
+            "section": str(info.get("section", "") or ""),
+        }
+
     def _op(conn):
-        for key, info in data.items():
+        for key, info in normalized.items():
             conn.execute(
                 "INSERT OR REPLACE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
-                (key, info.get("value", ""), info.get("type", "string"), info.get("label", ""), info.get("section", "")),
+                (key, info["value"], info["type"], info["label"], info["section"]),
             )
         conn.commit()
 
@@ -1521,9 +1846,15 @@ def backup(dest_path):
     _write_call(_op)
 
 
-def get_detection_stats(date_from=None, date_to=None, camera_id=None, min_alarm_level=None, gender=None):
-    q = "SELECT COUNT(*) as total, SUM(CASE WHEN alarm_level>0 THEN 1 ELSE 0 END) as violations FROM detection_logs WHERE 1=1"
+def get_detection_stats(date_from=None, date_to=None, camera_id=None, min_alarm_level=None, gender=None, rule_name=None):
     params = []
+    if min_alarm_level is not None:
+        violation_expr = "SUM(CASE WHEN alarm_level>=? THEN 1 ELSE 0 END) as violations"
+        params.append(int(min_alarm_level))
+    else:
+        violation_expr = "SUM(CASE WHEN alarm_level>0 THEN 1 ELSE 0 END) as violations"
+    q = f"SELECT COUNT(*) as total, {violation_expr} FROM detection_logs WHERE 1=1"
+    q += _internal_liveness_exclusion()
     if date_from:
         q += " AND timestamp>=?"
         params.append(date_from)
@@ -1533,9 +1864,7 @@ def get_detection_stats(date_from=None, date_to=None, camera_id=None, min_alarm_
     if camera_id:
         q += " AND camera_id=?"
         params.append(camera_id)
-    if min_alarm_level is not None:
-        q += " AND alarm_level>=?"
-        params.append(int(min_alarm_level))
+    q = _append_rule_name_filter(q, params, "rules_triggered", rule_name)
     if gender:
         q += " AND gender_norm=?"
         params.append(_normalize_gender_value(gender))
@@ -1550,6 +1879,7 @@ def get_hourly_violations(
         q = "SELECT strftime('%H', timestamp, 'localtime') as hour, COUNT(*) as count FROM detection_logs WHERE 1=1"
     else:
         q = "SELECT strftime('%H', timestamp) as hour, COUNT(*) as count FROM detection_logs WHERE 1=1"
+    q += _internal_liveness_exclusion()
     params = []
     if min_alarm_level is not None:
         q += " AND alarm_level>=?"
@@ -1565,9 +1895,7 @@ def get_hourly_violations(
     if camera_id:
         q += " AND camera_id=?"
         params.append(camera_id)
-    if rule_name:
-        q += " AND rules_triggered LIKE ?"
-        params.append(f"%{rule_name}%")
+    q = _append_rule_name_filter(q, params, "rules_triggered", rule_name)
     if gender:
         q += " AND gender_norm=?"
         params.append(_normalize_gender_value(gender))
@@ -1582,7 +1910,8 @@ def get_violations_by_person(
            COALESCE(MAX(CASE WHEN gender_norm != 'unknown' THEN gender_norm END), 'unknown') as gender,
            COUNT(*) as count
            FROM detection_logs
-           WHERE identity IS NOT NULL AND identity != ''"""
+           WHERE has_identity=1 AND identity IS NOT NULL AND identity != ''"""
+    q += _internal_liveness_exclusion()
     params = []
     if min_alarm_level is not None:
         q += " AND alarm_level>=?"
@@ -1598,9 +1927,7 @@ def get_violations_by_person(
     if camera_id:
         q += " AND camera_id=?"
         params.append(camera_id)
-    if rule_name:
-        q += " AND rules_triggered LIKE ?"
-        params.append(f"%{rule_name}%")
+    q = _append_rule_name_filter(q, params, "rules_triggered", rule_name)
     if gender:
         q += " AND gender_norm=?"
         params.append(_normalize_gender_value(gender))
@@ -1611,6 +1938,7 @@ def get_violations_by_person(
 
 def get_violations_by_gender(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, gender=None):
     q = "SELECT gender_norm, COUNT(*) as count FROM detection_logs WHERE 1=1"
+    q += _internal_liveness_exclusion()
     params = []
     if min_alarm_level is not None:
         q += " AND alarm_level>=?"
@@ -1626,9 +1954,7 @@ def get_violations_by_gender(date_from=None, date_to=None, camera_id=None, rule_
     if camera_id:
         q += " AND camera_id=?"
         params.append(camera_id)
-    if rule_name:
-        q += " AND rules_triggered LIKE ?"
-        params.append(f"%{rule_name}%")
+    q = _append_rule_name_filter(q, params, "rules_triggered", rule_name)
     if gender:
         q += " AND gender_norm=?"
         params.append(_normalize_gender_value(gender))
@@ -1645,12 +1971,12 @@ def get_violations_by_gender(date_from=None, date_to=None, camera_id=None, rule_
     ]
 
 
-def get_camera_activity(date_from=None, date_to=None, camera_id=None):
+def get_camera_activity(date_from=None, date_to=None, camera_id=None, rule_name=None, min_alarm_level=None, gender=None):
     q = """SELECT c.id as camera_id, c.name as camera_name, COUNT(dl.id) as count
            FROM cameras c
            LEFT JOIN detection_logs dl ON c.id=dl.camera_id"""
     params = []
-    conditions = []
+    conditions = [_internal_liveness_exclusion("dl").removeprefix(" AND ")]
     if date_from:
         conditions.append("dl.timestamp>=?")
         params.append(date_from)
@@ -1660,25 +1986,41 @@ def get_camera_activity(date_from=None, date_to=None, camera_id=None):
     if camera_id:
         conditions.append("c.id=?")
         params.append(camera_id)
+    if min_alarm_level is not None:
+        conditions.append("dl.alarm_level>=?")
+        params.append(int(min_alarm_level))
+    if rule_name:
+        conditions.append(
+            "(EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(dl.rules_triggered) THEN dl.rules_triggered ELSE '[]' END) WHERE value=?) "
+            "OR dl.rules_triggered=?)"
+        )
+        params.extend([str(rule_name), str(rule_name)])
+    if gender:
+        conditions.append("dl.gender_norm=?")
+        params.append(_normalize_gender_value(gender))
     if conditions:
         q += " WHERE " + " AND ".join(conditions)
     q += " GROUP BY c.id ORDER BY count DESC"
     return [dict(r) for r in _conn.execute(q, params).fetchall()]
 
 
-def get_compliance_over_time(rule_name=None, date_from=None, date_to=None, camera_id=None, time_basis=None, gender=None):
+def get_compliance_over_time(rule_name=None, date_from=None, date_to=None, camera_id=None, time_basis=None, gender=None, min_alarm_level=None):
     if time_basis == "Local":
         date_expr = "DATE(timestamp, 'localtime')"
     else:
         date_expr = "DATE(timestamp)"
+    params = []
+    if min_alarm_level is not None:
+        compliant_expr = "SUM(CASE WHEN alarm_level<? THEN 1 ELSE 0 END) as compliant"
+        params.append(int(min_alarm_level))
+    else:
+        compliant_expr = "SUM(CASE WHEN alarm_level=0 THEN 1 ELSE 0 END) as compliant"
     q = f"""SELECT {date_expr} as day,
            COUNT(*) as total,
-           SUM(CASE WHEN alarm_level=0 THEN 1 ELSE 0 END) as compliant
+           {compliant_expr}
            FROM detection_logs WHERE 1=1"""
-    params = []
-    if rule_name:
-        q += " AND rules_triggered LIKE ?"
-        params.append(f"%{rule_name}%")
+    q += _internal_liveness_exclusion()
+    q = _append_rule_name_filter(q, params, "rules_triggered", rule_name)
     if date_from:
         q += " AND timestamp>=?"
         params.append(date_from)
@@ -1699,13 +2041,12 @@ def get_identified_count(date_from=None, date_to=None, camera_id=None, rule_name
     q = """SELECT COUNT(DISTINCT identity) as count
            FROM detection_logs
            WHERE has_identity=1"""
+    q += _internal_liveness_exclusion()
     params = []
     if min_alarm_level is not None:
         q += " AND alarm_level>=?"
         params.append(int(min_alarm_level))
-    if rule_name:
-        q += " AND rules_triggered LIKE ?"
-        params.append(f"%{rule_name}%")
+    q = _append_rule_name_filter(q, params, "rules_triggered", rule_name)
     if date_from:
         q += " AND timestamp>=?"
         params.append(date_from)
@@ -1777,6 +2118,48 @@ def delete_face(face_id):
 
 def delete_detection_log(log_id):
     _write_execute("DELETE FROM detection_logs WHERE id=?", (log_id,))
+
+
+def delete_detection_logs(log_ids):
+    ids = [int(log_id) for log_id in (log_ids or []) if log_id is not None]
+    if not ids:
+        return 0
+
+    def _op(conn):
+        cur = conn.executemany("DELETE FROM detection_logs WHERE id=?", [(log_id,) for log_id in ids])
+        conn.commit()
+        rowcount = cur.rowcount if cur.rowcount is not None else len(ids)
+        return max(0, rowcount)
+
+    return int(_write_call(_op) or 0)
+
+
+def mark_detection_logs_reviewed(log_ids, reviewed=1):
+    ids = [int(log_id) for log_id in (log_ids or []) if log_id is not None]
+    if not ids:
+        return 0
+    reviewed_value = 1 if int(reviewed) else 0
+
+    def _op(conn):
+        conn.executemany("UPDATE detection_logs SET reviewed=? WHERE id=?", [(reviewed_value, log_id) for log_id in ids])
+        conn.commit()
+        return len(ids)
+
+    return int(_write_call(_op) or 0)
+
+
+def get_detection_snapshot_paths(log_ids=None, cutoff_date=None):
+    q = "SELECT snapshot_path FROM detection_logs WHERE snapshot_path IS NOT NULL AND snapshot_path!=''"
+    params = []
+    ids = [int(log_id) for log_id in (log_ids or []) if log_id is not None]
+    if ids:
+        placeholders = ",".join("?" for _ in ids)
+        q += f" AND id IN ({placeholders})"
+        params.extend(ids)
+    if cutoff_date:
+        q += " AND timestamp<?"
+        params.append(cutoff_date)
+    return [str(r["snapshot_path"]) for r in _conn.execute(q, params).fetchall() if r["snapshot_path"]]
 
 
 def cleanup_old_logs(cutoff_date):

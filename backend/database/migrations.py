@@ -5,7 +5,7 @@ import secrets
 import uuid
 
 
-CURRENT_VERSION = 38
+CURRENT_VERSION = 50
 
 
 def apply(conn):
@@ -87,7 +87,264 @@ def apply(conn):
         _migrate_v37(conn)
     if version < 38:
         _migrate_v38(conn)
+    if version < 39:
+        _migrate_v39(conn)
+    if version < 40:
+        _migrate_v40(conn)
+    if version < 41:
+        _migrate_v41(conn)
+    if version < 42:
+        _migrate_v42(conn)
+    if version < 43:
+        _migrate_v43(conn)
+    if version < 44:
+        _migrate_v44(conn)
+    if version < 45:
+        _migrate_v45(conn)
+    if version < 46:
+        _migrate_v46(conn)
+    if version < 47:
+        _migrate_v47(conn)
+    if version < 48:
+        _migrate_v48(conn)
+    if version < 49:
+        _migrate_v49(conn)
+    if version < 50:
+        _migrate_v50(conn)
     conn.execute(f"PRAGMA user_version = {CURRENT_VERSION}")
+    conn.commit()
+
+
+def _migrate_v50(conn):
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        (
+            "runtime_metrics_enabled",
+            "1",
+            "bool",
+            "Record Runtime Metrics",
+            "reports",
+        ),
+    )
+    conn.execute(
+        "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+        (
+            "bool",
+            "Record Runtime Metrics",
+            "reports",
+            "runtime_metrics_enabled",
+        ),
+    )
+    conn.commit()
+
+
+def _migrate_v49(conn):
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        (
+            "liveness_skip_presentation_for_stream_sources",
+            "1",
+            "bool",
+            "Skip Presentation Block For Stream Sources",
+            "detection",
+        ),
+    )
+    conn.execute(
+        "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+        (
+            "bool",
+            "Skip Presentation Block For Stream Sources",
+            "detection",
+            "liveness_skip_presentation_for_stream_sources",
+        ),
+    )
+    conn.commit()
+
+
+def _migrate_v48(conn):
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        ("logs_auto_refresh_enabled", "0", "bool", "Auto-refresh Logs", "data"),
+    )
+    conn.execute(
+        "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+        ("bool", "Auto-refresh Logs", "data", "logs_auto_refresh_enabled"),
+    )
+    conn.commit()
+
+
+def _migrate_v47(conn):
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_detection_logs_camera_ts ON detection_logs (camera_id, timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_detection_logs_alarm_level ON detection_logs (alarm_level)",
+        "CREATE INDEX IF NOT EXISTS idx_detection_logs_reviewed ON detection_logs (reviewed)",
+        "CREATE INDEX IF NOT EXISTS idx_detection_logs_gender_norm ON detection_logs (gender_norm)",
+        "CREATE INDEX IF NOT EXISTS idx_detection_logs_has_identity ON detection_logs (has_identity)",
+    ]
+    for sql in indexes:
+        conn.execute(sql)
+    conn.commit()
+
+
+def _migrate_v46(conn):
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        ("live_clip_enabled", "1", "bool", "Save Live Alarm Clips", "performance"),
+    )
+    conn.execute(
+        "UPDATE app_settings SET value=?, type=?, label=?, section=? WHERE key=?",
+        ("1", "bool", "Save Live Alarm Clips", "performance", "live_clip_enabled"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        ("live_clip_seconds", "5", "int", "Live Clip Seconds", "performance"),
+    )
+    conn.execute(
+        "UPDATE app_settings SET value=?, type=?, label=?, section=? WHERE key=?",
+        ("5", "int", "Live Clip Seconds", "performance", "live_clip_seconds"),
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        ("playback_record_enabled", "1", "bool", "Playback Auto-Clip", "performance"),
+    )
+    conn.execute(
+        "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+        ("bool", "Playback Auto-Clip", "performance", "playback_record_enabled"),
+    )
+    conn.commit()
+
+
+def _migrate_v45(conn):
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        ("popup_notifications_enabled", "1", "bool", "Popup notifications", "notifications"),
+    )
+    conn.execute(
+        "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+        ("bool", "Popup notifications", "notifications", "popup_notifications_enabled"),
+    )
+    conn.commit()
+
+
+def _migrate_v44(conn):
+    settings = [
+        ("object_tracker_low_confidence", "0.10", "float", "Object Tracker Low Confidence", "detection"),
+        ("object_tracker_low_confidence_ratio", "0.45", "float", "Object Tracker Low Confidence Ratio", "detection"),
+        ("object_tracker_new_track_confidence", "0.35", "float", "Object Tracker New Track Confidence", "detection"),
+        ("object_tracker_confirm_hits", "2", "int", "Object Tracker Confirm Hits", "detection"),
+    ]
+    for key, value, vtype, label, section in settings:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+            (key, value, vtype, label, section),
+        )
+        conn.execute(
+            "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+            (vtype, label, section, key),
+        )
+    conn.commit()
+
+
+def _migrate_v43(conn):
+    conn.execute(
+        "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        ("display_bbox_hold_sec", "0.45", "float", "Display BBox Hold", "performance"),
+    )
+    conn.execute(
+        "UPDATE app_settings SET value='0.45', type='float', label='Display BBox Hold', section='performance' "
+        "WHERE key='display_bbox_hold_sec'"
+    )
+    conn.commit()
+
+
+def _migrate_v42(conn):
+    settings = [
+        ("bbox_hold_max_frames", "6", "int", "BBox Hold Frames", "performance"),
+        ("bbox_hold_max_stale_sec", "0.75", "float", "BBox Hold Staleness", "performance"),
+        ("display_bbox_hold_sec", "0.45", "float", "Display BBox Hold", "performance"),
+    ]
+    for key, value, vtype, label, section in settings:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+            (key, value, vtype, label, section),
+        )
+        conn.execute(
+            "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+            (vtype, label, section, key),
+        )
+    conn.execute("UPDATE app_settings SET value='6' WHERE key='bbox_hold_max_frames' AND CAST(value AS INTEGER) < 6")
+    conn.execute("UPDATE app_settings SET value='0.75' WHERE key='bbox_hold_max_stale_sec' AND CAST(value AS REAL) < 0.75")
+    conn.commit()
+
+
+def _migrate_v41(conn):
+    settings = [
+        ("detection_interval", "1", "int", "Detection Interval", "performance"),
+        ("insightface_det_size", "640", "int", "InsightFace Detector Size", "detection"),
+    ]
+    for key, value, vtype, label, section in settings:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+            (key, value, vtype, label, section),
+        )
+        conn.execute(
+            "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+            (vtype, label, section, key),
+        )
+    conn.execute("UPDATE app_settings SET value='640' WHERE key='insightface_det_size' AND CAST(value AS INTEGER) < 320")
+    conn.commit()
+
+
+def _migrate_v40(conn):
+    settings = [
+        ("live_infer_dim", "640", "int", "Live Inference Size", "performance"),
+        ("live_infer_dim_min", "384", "int", "Live Inference Size Min", "performance"),
+        ("live_infer_dim_max", "768", "int", "Live Inference Size Max", "performance"),
+        ("adaptive_live_infer_dim", "1", "bool", "Adaptive Live Inference Size", "performance"),
+        ("detector_max_infer_dim", "768", "int", "Detector Max Inference Size", "performance"),
+        ("bbox_hold_max_frames", "6", "int", "BBox Hold Frames", "performance"),
+        ("bbox_hold_max_stale_sec", "0.75", "float", "BBox Hold Staleness", "performance"),
+        ("min_face_size", "24", "int", "Minimum Face Size", "detection"),
+        ("object_min_area_ratio", "0.00025", "float", "Object Minimum Area Ratio", "detection"),
+        ("person_weak_detection_confidence", "0.55", "float", "Weak Person Confidence", "detection"),
+        ("person_tiny_area_ratio", "0.006", "float", "Tiny Person Area Ratio", "detection"),
+    ]
+    for key, value, vtype, label, section in settings:
+        conn.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+            (key, value, vtype, label, section),
+        )
+        conn.execute(
+            "UPDATE app_settings SET type=?, label=?, section=? WHERE key=?",
+            (vtype, label, section, key),
+        )
+    conn.execute("UPDATE app_settings SET value='640' WHERE key='live_infer_dim' AND CAST(value AS INTEGER) < 640")
+    conn.execute("UPDATE app_settings SET value='384' WHERE key='live_infer_dim_min' AND CAST(value AS INTEGER) < 384")
+    conn.execute("UPDATE app_settings SET value='768' WHERE key='live_infer_dim_max' AND CAST(value AS INTEGER) < 768")
+    conn.execute("UPDATE app_settings SET value='24' WHERE key='min_face_size' AND CAST(value AS INTEGER) >= 40")
+    conn.execute("UPDATE app_settings SET value='24' WHERE key LIKE 'camera_%_min_face_size' AND CAST(value AS INTEGER) >= 40")
+    conn.commit()
+
+
+def _migrate_v39(conn):
+    row = conn.execute("SELECT value FROM app_settings WHERE key='insightface_allowed_modules'").fetchone()
+    gender_row = conn.execute("SELECT value FROM app_settings WHERE key='gender_inference_enabled'").fetchone()
+    gender_enabled = str(gender_row[0]).strip().lower() in ("1", "true", "yes", "on") if gender_row else False
+    existing = []
+    if row and row[0]:
+        try:
+            parsed = json.loads(row[0])
+            if isinstance(parsed, list):
+                existing = [str(v) for v in parsed]
+        except Exception:
+            existing = []
+    modules = ["detection", "recognition"]
+    if gender_enabled and ("genderage" in existing or not row):
+        modules.append("genderage")
+    conn.execute(
+        "INSERT OR REPLACE INTO app_settings (key, value, type, label, section) VALUES (?, ?, ?, ?, ?)",
+        ("insightface_allowed_modules", json.dumps(modules), "json", "Allowed InsightFace Modules", "detection"),
+    )
     conn.commit()
 
 

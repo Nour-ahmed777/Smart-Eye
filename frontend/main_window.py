@@ -1,4 +1,4 @@
-﻿import contextlib
+import contextlib
 import importlib
 import sys
 import logging
@@ -27,7 +27,7 @@ from frontend.styles._colors import _BG_NAV_DARK
 from frontend.ui_tokens import SPACE_XXXS
 
 from frontend.services.rules_service import RulesService
-from frontend.state.page_factory import build_pages, create_page, get_page_specs, UnloadPolicy
+from frontend.state.page_factory import build_pages, get_page_specs, UnloadPolicy
 from backend.services.service_manager import get_service_manager
 from frontend.widgets.alert_popup import show_alert
 from frontend.navigation import nav_label_map
@@ -164,10 +164,7 @@ class MainWindow(QMainWindow):
                 if key == "settings":
                     self._bind_settings_page(page)
             except (RuntimeError, AttributeError, TypeError, ValueError, OSError):
-                import traceback
-
-                traceback.print_exc()
-                print(f"NAV_ERROR: failed to create page for {key}")
+                logger.exception("Failed to create page for %s", key)
                 return
         if self._pages[key] is None:
             return
@@ -610,7 +607,10 @@ class MainWindow(QMainWindow):
                 self._db.get_conn()
                 .execute(
                     "SELECT COUNT(*) AS cnt, MAX(id) AS max_id "
-                    "FROM detection_logs WHERE alarm_level>0 AND id>? ",
+                    "FROM detection_logs "
+                    "WHERE alarm_level>0 AND id>? "
+                    "AND LOWER(COALESCE(rules_triggered, '')) NOT LIKE '%livenessfailure%' "
+                    "AND LOWER(COALESCE(snapshot_path, '')) NOT LIKE '%liveness_fail%'",
                     (self._alert_last_id,),
                 )
                 .fetchone()
@@ -619,6 +619,9 @@ class MainWindow(QMainWindow):
                 return
             count = int(summary["cnt"] or 0)
             max_id = int(summary["max_id"] or self._alert_last_id)
+            self._alert_last_id = max(self._alert_last_id, max_id)
+            if not self._db.get_bool("popup_notifications_enabled", True):
+                return
             row = (
                 self._db.get_conn()
                 .execute(
@@ -628,7 +631,6 @@ class MainWindow(QMainWindow):
                 )
                 .fetchone()
             )
-            self._alert_last_id = max(self._alert_last_id, max_id)
             if not row:
                 return
             cam_id, ts, rules = row
@@ -755,7 +757,7 @@ class MainWindow(QMainWindow):
                 self._tray_icon.hide()
 
 
-        for key, page in list(self._pages.items()):
+        for page in list(self._pages.values()):
             if page is None:
                 continue
             with contextlib.suppress(Exception):

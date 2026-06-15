@@ -26,7 +26,6 @@ from frontend.styles._colors import (
     _BG_BASE_92,
     _BG_NAV_ALT,
     _BG_NAV_DARK,
-    _BG_SIDEBAR_ALT,
     _BG_SIDEBAR_START,
     _MUTED_BORDER_60,
     _TEXT_MUTED,
@@ -38,10 +37,9 @@ from frontend.styles._colors import (
     _WHITE_04,
 )
 from frontend.styles._shadows import apply_shadow_float, apply_shadow_glow
-from frontend.styles.page_styles import muted_label_style, text_style, transparent_surface_style
+from frontend.styles.page_styles import muted_label_style, text_style
 from frontend.ui_tokens import (
     FONT_SIZE_15,
-    FONT_SIZE_19,
     FONT_SIZE_9,
     FONT_SIZE_CAPTION,
     FONT_SIZE_LABEL,
@@ -608,10 +606,6 @@ class SidebarWidget(QWidget):
         self._ver_lbl_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
 
     def _on_nav_clicked(self, key: str):
-        try:
-            print(f"NAV_CLICK: {key}")
-        except (RuntimeError, OSError):
-            pass
         self._on_navigate(key)
 
     def set_active(self, key: str):
